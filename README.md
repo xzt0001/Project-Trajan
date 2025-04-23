@@ -73,7 +73,7 @@ qemu-system-aarch64 -M virt -cpu cortex-a53 -nographic -kernel build/kernel8.img
 My approach to debugging the complex MMU transition problem demonstrates the systematic methodology used throughout this project:
 
 ### 1. Problem Instrumentation
-We added comprehensive logging at critical transition points, capturing:
+Added comprehensive logging at critical transition points, capturing:
 - Register state before/after MMU enablement
 - Page table entry validity
 - Memory mapping verification
@@ -81,21 +81,21 @@ We added comprehensive logging at critical transition points, capturing:
 - Executable permission verification
 
 ### 2. Hypothesis-Driven Debugging
-We identified three potential failure points:
+Identified three potential failure points:
 - Vector table accessibility post-MMU enablement
 - Program counter translation continuity
 - Exception handling race conditions
 
 ### 3. Controlled Experiments
-For each hypothesis, we implemented targeted solutions:
+For each hypothesis, I implemented targeted solutions:
 - Direct mapping of vector table to known virtual address
 - Identity mapping of transition code
 - VBAR_EL1 update sequencing
 
 ### 4. Verification
-We verified each solution through:
+Verified each solution through:
 - Memory permission bit inspection
 - Register state validation
 - Execution continuity testing
 
-This methodical approach allowed us to solve one of ARM64's most challenging bootstrapping problems: maintaining execution flow while fundamentally changing the memory addressing model.
+This methodical approach allowed me to solve one of ARM64's most challenging bootstrapping problems: maintaining execution flow while fundamentally changing the memory addressing model.
