@@ -59,3 +59,45 @@ void uart_puthex(uint64_t value) {
         }
     }
 }
+
+// Function to print 64-bit value in hexadecimal format (16 digits)
+void uart_print_hex(uint64_t value) {
+    // Print all 16 hex digits with leading zeros for 64-bit values
+    const int num_digits = 16;
+    
+    for (int i = (num_digits - 1) * 4; i >= 0; i -= 4) {
+        uint8_t digit = (value >> i) & 0xF;
+        
+        // Convert digit to character and print it
+        if (digit < 10) {
+            uart_putc('0' + digit);
+        } else {
+            uart_putc('A' + (digit - 10));  // Use capital letters
+        }
+    }
+}
+
+// Function to print 64-bit value in hexadecimal format with "0x" prefix
+void uart_hex64(uint64_t value) {
+    // Print "0x" prefix
+    uart_putc('0');
+    uart_putc('x');
+    
+    // Use existing function to print the hexadecimal digits
+    uart_print_hex(value);
+}
+
+// Function to print a value in hex format (used in context.S and vmm.c)
+void uart_putx(uint64_t value) {
+    // Print 8 hex digits with no prefix
+    for (int i = 28; i >= 0; i -= 4) {
+        uint8_t digit = (value >> i) & 0xF;
+        
+        // Convert digit to character and print it
+        if (digit < 10) {
+            uart_putc('0' + digit);
+        } else {
+            uart_putc('A' + (digit - 10));  // Use capital letters
+        }
+    }
+}

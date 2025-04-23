@@ -1,0 +1,56 @@
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+*.img
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel binary files
+kernel8.img
+*.list
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Build directories
+build/
+build_minimal/
+
+# Editor files
+.vscode/
+.idea/
+
+# Crash log files
+*.log 

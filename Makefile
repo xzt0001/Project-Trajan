@@ -13,11 +13,23 @@ ASFLAGS := -g
 
 # Include all the necessary files for a full kernel
 OBJS := boot/start.o \
+        boot/test.o \
         kernel/main.o \
         kernel/uart.o \
         kernel/string.o \
         memory/pmm.o \
-        memory/vmm.o
+        memory/vmm.o \
+        kernel/context.o \
+        kernel/timer.o \
+        kernel/interrupts.o \
+        kernel/vector.o \
+        kernel/early_trap.o \
+        kernel/serror_debug_handler.o \
+        kernel/task.o \
+        kernel/scheduler.o \
+        kernel/trap.o \
+        kernel/user.o
+
 
 # C runtime is causing problems, so minimize dependencies
 all: build/kernel8.img
@@ -40,6 +52,21 @@ build:
 boot/start.o: boot/start.S
 	$(AS) $(ASFLAGS) boot/start.S -o boot/start.o
 
+boot/test.o: boot/test.S
+	$(AS) $(ASFLAGS) boot/test.S -o boot/test.o
+
+kernel/context.o: kernel/context.S
+	$(AS) $(ASFLAGS) kernel/context.S -o kernel/context.o
+
+kernel/vector.o: kernel/vector.S
+	$(AS) $(ASFLAGS) kernel/vector.S -o kernel/vector.o
+
+kernel/early_trap.o: kernel/early_trap.S
+	$(AS) $(ASFLAGS) kernel/early_trap.S -o kernel/early_trap.o
+
+kernel/serror_debug_handler.o: kernel/serror_debug_handler.S
+	$(AS) $(ASFLAGS) kernel/serror_debug_handler.S -o kernel/serror_debug_handler.o
+
 # C files
 kernel/main.o: kernel/main.c
 	$(CC) $(CFLAGS) -c kernel/main.c -o kernel/main.o
@@ -55,5 +82,17 @@ memory/pmm.o: memory/pmm.c
 
 memory/vmm.o: memory/vmm.c
 	$(CC) $(CFLAGS) -c memory/vmm.c -o memory/vmm.o
+
+kernel/task.o: kernel/task.c
+	$(CC) $(CFLAGS) -c kernel/task.c -o kernel/task.o
+
+kernel/scheduler.o: kernel/scheduler.c
+	$(CC) $(CFLAGS) -c kernel/scheduler.c -o kernel/scheduler.o
+
+kernel/trap.o: kernel/trap.c
+	$(CC) $(CFLAGS) -c kernel/trap.c -o kernel/trap.o
+
+kernel/user.o: kernel/user.S
+	$(AS) $(ASFLAGS) kernel/user.S -o kernel/user.o
 
 .PHONY: all clean
