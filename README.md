@@ -68,24 +68,34 @@ make
 qemu-system-aarch64 -M virt -cpu cortex-a53 -nographic -kernel build/kernel8.img
 ```
 
-## Technical Highlights
+## Debugging Methodology: MMU Enablement Case Study
 
-### MMU Enablement
-This project successfully tackles one of the most challenging aspects of OS development: safely transitioning to MMU-enabled mode while maintaining full execution control. The implementation resolves the "chicken and egg" problem through:
+My approach to debugging the complex MMU transition problem demonstrates the systematic methodology used throughout this project:
 
-1. Identity mapping for transition code
-2. Pre-MMU vector table mapping
-3. VBAR_EL1 race condition elimination
-4. Comprehensive exception handling
+### 1. Problem Instrumentation
+We added comprehensive logging at critical transition points, capturing:
+- Register state before/after MMU enablement
+- Page table entry validity
+- Memory mapping verification
+- Stack alignment checks
+- Executable permission verification
 
-## 🛠 Build Instructions
+### 2. Hypothesis-Driven Debugging
+We identified three potential failure points:
+- Vector table accessibility post-MMU enablement
+- Program counter translation continuity
+- Exception handling race conditions
 
-### Dependencies
-- `qemu-system-aarch64`
-- `aarch64-elf-gcc` cross toolchain
+### 3. Controlled Experiments
+For each hypothesis, we implemented targeted solutions:
+- Direct mapping of vector table to known virtual address
+- Identity mapping of transition code
+- VBAR_EL1 update sequencing
 
-### Build and Run
+### 4. Verification
+We verified each solution through:
+- Memory permission bit inspection
+- Register state validation
+- Execution continuity testing
 
-```bash
-make
-qemu-system-aarch64 -M virt -cpu cortex-a53 -nographic -kernel build/kernel8.img
+This methodical approach allowed us to solve one of ARM64's most challenging bootstrapping problems: maintaining execution flow while fundamentally changing the memory addressing model.
