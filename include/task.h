@@ -38,6 +38,7 @@ extern task_t* task_list[MAX_TASKS];
 void init_tasks();
 void create_task(void (*entry_point)());
 void create_el0_task(void (*entry_point)()); // Create a task that runs in EL0 mode
+void start_user_task(void (*entry_point)(void)); // Directly start a user task in EL0 mode
 void dummy_task_a(void);  // Dummy task function
 void dummy_task_b(void);  // Dummy task function
 

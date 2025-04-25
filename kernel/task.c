@@ -4,6 +4,9 @@
 #include "../include/types.h" // For uint64_t and other types
 #include "../include/uart.h"  // For uart_puts
 
+// External function declarations
+extern void full_restore_context(task_t* task);
+
 // Define page size
 #define PAGE_SIZE 4096  // 4KB standard page size
 
@@ -770,5 +773,83 @@ void create_el0_task(void (*entry_point)()) {
     uart_puts("[TASK] Created EL0 task at 0x");
     uart_hex64((uint64_t)entry_point);
     uart_puts("\n");
+}
+
+// Function to directly start a user task in EL0 mode
+void start_user_task(void (*entry_point)(void)) {
+    uart_puts("[TASK] Starting user task directly at 0x");
+    uart_hex64((uint64_t)entry_point);
+    uart_puts("\n");
+    
+    // Allocate memory for task stack (one page = 4KB)
+    void* stack = alloc_page();
+    if (!stack) {
+        uart_puts("[TASK] ERROR: Failed to allocate stack for EL0 task\n");
+        return;
+    }
+    
+    // Initialize a task structure for the EL0 task
+    task_t* task = (task_t*)alloc_page();
+    if (!task) {
+        uart_puts("[TASK] ERROR: Failed to allocate task structure\n");
+        free_page(stack);
+        return;
+    }
+    
+    // Clear the task structure
+    memset(task, 0, sizeof(task_t));
+    
+    // Set up the stack pointer (points to the top of the stack)
+    uint64_t* stack_top = (uint64_t*)((uint64_t)stack + PAGE_SIZE);
+    
+    // Ensure 16-byte alignment
+    stack_top = (uint64_t*)((uint64_t)stack_top & ~0xFUL);
+    
+    // Reserve stack space for register saves
+    stack_top -= 16;
+    
+    // Initialize registers with known patterns for debugging
+    for (int i = 0; i < 16; i++) {
+        task->regs[i] = 0xEE00000000000000UL | i;
+    }
+    for (int i = 16; i < 31; i++) {
+        task->regs[i] = 0xFF00000000000000UL | i;
+    }
+    
+    // Set the stack pointer in the task structure
+    task->stack_ptr = stack_top;
+    
+    // Set PC to the entry point
+    task->pc = (uint64_t)entry_point;
+    
+    // Set SPSR for EL0t mode
+    task->spsr = 0; // EL0t mode (bits 0-3 = 0)
+    
+    // Debug output
+    uart_puts("[TASK] Set up direct EL0 task with PC: 0x");
+    uart_hex64(task->pc);
+    uart_puts(", SPSR: 0x");
+    uart_hex64(task->spsr);
+    uart_puts("\n");
+    
+    // Jump to the EL0 task
+    uart_puts("[TASK] Jumping to EL0 task...\n");
+    
+    // Ensure VBAR_EL1 is set correctly before switching
+    uint64_t vbar;
+    extern void* vector_table;
+    asm volatile("mrs %0, vbar_el1" : "=r"(vbar));
+    if (vbar != (uint64_t)&vector_table) {
+        uart_puts("[TASK] WARNING: VBAR_EL1 is not set correctly! Setting it now.\n");
+        asm volatile("msr vbar_el1, %0" :: "r"(&vector_table));
+        asm volatile("isb");
+    }
+    
+    // Direct jump to EL0 task
+    full_restore_context(task);
+    
+    // Should never reach here
+    uart_puts("[TASK] ERROR: Returned from full_restore_context\n");
+    while(1);
 }
 

@@ -1095,7 +1095,8 @@ void map_vector_table(void) {
     extern void* vector_table;
     uint64_t vt_addr = (uint64_t)vector_table;
     uint64_t current_vbar = 0;
-    uint64_t phys_vt_addr = 0x00089800; // Physical address of vector table from logs
+    // FIXED: Use the correct physical address that matches VBAR_EL1 before MMU
+    uint64_t phys_vt_addr = 0x00089000; // Corrected from 0x00089800
     
     // First check if VBAR_EL1 is already set
     asm volatile("mrs %0, vbar_el1" : "=r"(current_vbar));
@@ -1106,19 +1107,20 @@ void map_vector_table(void) {
     uart_hex64(current_vbar);
     uart_puts("\n");
     
-    uart_puts("[VMM] CRITICAL: Explicitly mapping vector table from physical 0x00089800 to virtual 0x1000000\n");
+    uart_puts("[VMM] CRITICAL: Explicitly mapping vector table from physical 0x00089000 to virtual 0x1000000\n");
     
-    // STEP 1: Direct mapping from physical 0x00089800 to virtual 0x1000000
-    map_kernel_page(0x1000000, phys_vt_addr, PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_AP_RW | ATTR_NORMAL_EXEC);
+    // STEP 1: Direct mapping from physical 0x00089000 to virtual 0x1000000
+    uint64_t virt_vector_base = 0x1000000;
+    map_kernel_page(virt_vector_base, phys_vt_addr, PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_AP_RW | ATTR_NORMAL_EXEC);
     
-    // Also map the second page as vector table is 2KB
-    map_kernel_page(0x1000000 + 0x1000, phys_vt_addr + 0x1000, PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_AP_RW | ATTR_NORMAL_EXEC);
+    // STEP 2: Also map the second page as vector table is 2KB
+    map_kernel_page(virt_vector_base + 0x1000, phys_vt_addr + 0x1000, PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_AP_RW | ATTR_NORMAL_EXEC);
     
     // Set the fixed vector table address regardless of the symbol's actual address
     // This is critical - we're using a fixed address for VBAR_EL1
     saved_vector_table_addr = 0x1000000;
     
-    uart_puts("[VMM] Vector table explicitly mapped at VA 0x1000000 <- PA 0x00089800\n");
+    uart_puts("[VMM] Vector table explicitly mapped at VA 0x1000000 <- PA 0x00089000\n");
     
     // Verify the mapping
     verify_page_mapping(0x1000000);
@@ -1286,12 +1288,18 @@ void enable_mmu(uint64_t* page_table_base) {
         uart_puts("\n");
     }
     
+    extern void mmu_continuation_point(void);
+    
     // Full MMU initialization sequence for ARMv8-A architecture with immediate VBAR_EL1 update
+    // and explicit branch to continuation point
     asm volatile (
-        // 1. Ensure all previous memory accesses complete
-        "dsb ish\n"  // Data Synchronization Barrier (Inner Shareable domain)
+        // 1. Store continuation point address in x9
+        "adr x9, %1\n"              // Load physical address of mmu_continuation_point
+        
+        // 2. Ensure all previous memory accesses complete
+        "dsb ish\n"                 // Data Synchronization Barrier (Inner Shareable domain)
 
-        // 2. Configure memory attributes (MAIR_EL1)
+        // 3. Configure memory attributes (MAIR_EL1)
         // ------------------------------------------
         // Attr0 = 0b11111111 (Normal memory, Write-Back cacheable)
         // Attr1 = 0b00000100 (Device-nGnRE memory)
@@ -1299,7 +1307,7 @@ void enable_mmu(uint64_t* page_table_base) {
         "movk x0, #0x44, lsl #16\n"  // Set MAIR[2] = 0x44 (bits 16-23)
         "msr mair_el1, x0\n"         // Write to Memory Attribute Indirection Register
 
-        // 3. Configure translation control (TCR_EL1)
+        // 4. Configure translation control (TCR_EL1)
         // ------------------------------------------
         // TG0 = 00 (4KB granule size)
         // T0SZ = 16 (64 - 16 = 48-bit virtual address space)
@@ -1308,54 +1316,40 @@ void enable_mmu(uint64_t* page_table_base) {
         "movk x0, #0x1, lsl #32\n"   // IPS[2:0] = 0b001 (bits 32-34)
         "msr tcr_el1, x0\n"          // Write to Translation Control Register
 
-        // 4. Set page table base address
+        // 5. Set page table base address
         // ------------------------------
         "msr ttbr0_el1, %0\n"        // TTBR0_EL1 = page_table_base (user space)
         "msr ttbr1_el1, xzr\n"       // TTBR1_EL1 = 0 (disable higher-half kernel mappings)
 
-        // 5. Ensure system sees register updates
+        // 6. Ensure system sees register updates
         "isb\n"                      // Instruction Synchronization Barrier
 
-        // 6. Enable MMU
+        // 7. Enable MMU
         // -------------
         "mrs x0, sctlr_el1\n"        // Read System Control Register
         "orr x0, x0, #1\n"           // Set M bit (bit 0) to enable MMU
         "msr sctlr_el1, x0\n"        // Write back modified SCTLR_EL1
         "isb\n"                      // Final barrier after MMU enable
 
-        // STEP 2: CRITICAL FIX - Set VBAR_EL1 immediately after MMU enable
-        // This must happen before any other code that might cause an exception
-        "mov x0, #0x1000000\n"       // Load the fixed virtual address 0x1000000
-        "msr vbar_el1, x0\n"         // Set VBAR_EL1 to virtual address
-        "isb\n"                      // Ensure VBAR_EL1 is set before continuing
+        // 8. CRITICAL: Branch to identity-mapped continuation point
+        "br x9\n"                    // Branch to mmu_continuation_point
+        
+        // We should never reach here, but in case we do:
+        "mov x0, #'E'\n"
+        // Replace adr with mov/movk sequence for UART address
+        "mov x1, #0x9000\n"
+        "movk x1, #0x0, lsl #16\n"   // x1 = 0x09000000 (UART address)
+        "str w0, [x1]\n"
+        "b .\n"                      // Hang in case branch fails
         
         : // No outputs
-        : "r"(page_table_base)       // %0: page table root (L0) address
-        : "x0"                       // Clobbered register
+        : "r"(page_table_base),      // %0: page table root (L0) address
+          "S"(mmu_continuation_point) // %1: mmu_continuation_point symbol
+        : "x0", "x1", "x9"           // Clobbered registers
     );
     
-    // DEBUG PATCH: Add prominent marker to show post-MMU VBAR_EL1 value
-    uart_puts("\n***** POST-MMU DEBUG *****\n");
-    uart_puts("VBAR_EL1 after MMU enabled = 0x");
-    uint64_t post_mmu_vbar;
-    asm volatile("mrs %0, vbar_el1" : "=r"(post_mmu_vbar));
-    uart_hex64(post_mmu_vbar);
-    
-    if (post_mmu_vbar == 0x1000000) {
-        uart_puts(" [CORRECT - Virtual Address]\n");
-    } else if (post_mmu_vbar == 0x00089800) {
-        uart_puts(" [ERROR - Still Physical Address]\n");
-    } else if (post_mmu_vbar == 0) {
-        uart_puts(" [ERROR - Zero Address]\n");
-    } else {
-        uart_puts(" [UNKNOWN Address]\n");
-    }
-    uart_puts("**************************\n\n");
-    
-    // Update global MMU state
-    mmu_enabled = 1;  // Atomic flag set (assuming single-core)
-    
-    uart_puts("[VMM] MMU enabled with VBAR_EL1 set to virtual address 0x1000000\n");
+    // We should never reach here since we branch to mmu_continuation_point
+    uart_puts("[VMM] ERROR: Returned from MMU enable sequence without branching!\n");
 }
 
 // Function to ensure VBAR_EL1 is correct after MMU is enabled
@@ -1573,6 +1567,9 @@ uint64_t* get_kernel_page_table(void) {
 
 // Continuation point for after MMU is enabled
 void __attribute__((used, aligned(4096))) mmu_continuation_point(void) {
+    // Add immediate UART output to confirm we've reached this point
+    uart_puts("[MMU] Reached mmu_continuation_point!\n");
+    
     uart_puts("\n>>> MMU transition SUCCESSFUL! <<<\n");
 
     uint64_t post_mmu_vbar;

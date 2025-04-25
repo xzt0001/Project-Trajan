@@ -1013,8 +1013,27 @@ void kernel_main(unsigned long uart_addr) {
     // Test EL0 SVC handling
     uart_puts("\n[KERNEL] Starting EL0 svc test...\n");
     *uart = 'E'; *uart = 'L'; *uart = '0'; *uart = 'T'; *uart = ':'; // EL0 task creation marker
+    
+    // Step 1: Force an SVC Test from EL1
+    uart_puts("\n[KERNEL] Step 1: Testing SVC from EL1\n");
+    asm volatile("svc #0"); // Test trap at EL1
+    uart_puts("[KERNEL] Returned from EL1 SVC test\n");
+    
+    // Debug tip: Add marker before switching to user
+    uart_puts("[EL1] Before switching to user\n");
+    
+    // Step 2: Manually call start_user_task with an EL0 entry
+    extern void user_task_entry(void);
+    start_user_task(user_task_entry);
+    
+    // The code below should not be reached if start_user_task works properly
     create_el0_task(user_test_svc);
     *uart = 'D'; *uart = 'B'; *uart = 'G'; *uart = '4'; *uart = ':'; // Debug marker 4
+    
+    // Add immediate syscall test before starting scheduler
+    uart_puts("\n[KERNEL] Testing syscall directly from EL1...\n");
+    asm volatile("svc #0"); // Test syscall 0 (hello)
+    uart_puts("[KERNEL] Returned from direct syscall test\n");
     
     // Start the scheduler, which will eventually switch to our EL0 task
     uart_puts("[KERNEL] Starting scheduler\n");

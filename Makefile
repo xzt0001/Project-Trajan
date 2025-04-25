@@ -28,7 +28,9 @@ OBJS := boot/start.o \
         kernel/task.o \
         kernel/scheduler.o \
         kernel/trap.o \
-        kernel/user.o
+        kernel/user.o \
+        kernel/syscall.o \
+        kernel/user_entry.o
 
 
 # C runtime is causing problems, so minimize dependencies
@@ -94,5 +96,11 @@ kernel/trap.o: kernel/trap.c
 
 kernel/user.o: kernel/user.S
 	$(AS) $(ASFLAGS) kernel/user.S -o kernel/user.o
+
+kernel/syscall.o: kernel/syscall.c
+	$(CC) $(CFLAGS) -c kernel/syscall.c -o kernel/syscall.o
+
+kernel/user_entry.o: kernel/user_entry.c
+	$(CC) $(CFLAGS) -c kernel/user_entry.c -o kernel/user_entry.o
 
 .PHONY: all clean
