@@ -15,7 +15,7 @@ void test_scheduler(void);
 void kernel_main(void) __attribute__((used, externally_visible, noreturn));
 
 // Vector table defined in vector.S
-extern void* vector_table;
+extern char vector_table[];
 
 // Print a single character to UART
 static inline void print_char(char c) {

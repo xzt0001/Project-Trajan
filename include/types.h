@@ -16,10 +16,17 @@ typedef signed int int32_t;
 typedef signed long long int64_t;
 
 /* Size types */
-typedef uint64_t size_t;
-typedef int64_t ssize_t;
-typedef uint64_t uintptr_t;
-typedef int64_t intptr_t;
+typedef unsigned long size_t;
+typedef signed long ssize_t;
+
+/* Boolean type */
+typedef int bool;
+#define true 1
+#define false 0
+
+/* Pointer size integer */
+typedef unsigned long uintptr_t;
+typedef signed long intptr_t;
 
 /* NULL pointer */
 #define NULL ((void*)0)

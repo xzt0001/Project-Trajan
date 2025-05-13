@@ -837,11 +837,12 @@ void start_user_task(void (*entry_point)(void)) {
     
     // Ensure VBAR_EL1 is set correctly before switching
     uint64_t vbar;
-    extern void* vector_table;
+    extern char vector_table[]; // Update type to match global declaration
     asm volatile("mrs %0, vbar_el1" : "=r"(vbar));
-    if (vbar != (uint64_t)&vector_table) {
+    if (vbar != (uint64_t)vector_table) {
         uart_puts("[TASK] WARNING: VBAR_EL1 is not set correctly! Setting it now.\n");
-        asm volatile("msr vbar_el1, %0" :: "r"(&vector_table));
+        // Point VBAR_EL1 to the vector table (no &)
+        asm volatile("msr vbar_el1, %0" :: "r"(vector_table));
         asm volatile("isb");
     }
     

@@ -15,8 +15,12 @@ ASFLAGS := -g
 OBJS := boot/start.o \
         boot/test.o \
         kernel/main.o \
-        kernel/uart.o \
+        kernel/uart_early.o \
+        kernel/uart_late.o \
+        kernel/uart_legacy.o \
+        kernel/uart_globals.o \
         kernel/string.o \
+        kernel/test_uart_string.o \
         memory/pmm.o \
         memory/vmm.o \
         kernel/context.o \
@@ -73,8 +77,21 @@ kernel/serror_debug_handler.o: kernel/serror_debug_handler.S
 kernel/main.o: kernel/main.c
 	$(CC) $(CFLAGS) -c kernel/main.c -o kernel/main.o
 
-kernel/uart.o: kernel/uart.c
-	$(CC) $(CFLAGS) -c kernel/uart.c -o kernel/uart.o
+# UART drivers - separate early and late implementations
+kernel/uart_early.o: kernel/uart_early.c
+	$(CC) $(CFLAGS) -c kernel/uart_early.c -o kernel/uart_early.o
+
+kernel/uart_late.o: kernel/uart_late.c
+	$(CC) $(CFLAGS) -c kernel/uart_late.c -o kernel/uart_late.o
+
+kernel/uart_legacy.o: kernel/uart_legacy.c
+	$(CC) $(CFLAGS) -c kernel/uart_legacy.c -o kernel/uart_legacy.o
+
+kernel/uart_globals.o: kernel/uart_globals.c
+	$(CC) $(CFLAGS) -c kernel/uart_globals.c -o kernel/uart_globals.o
+
+kernel/test_uart_string.o: kernel/test_uart_string.c
+	$(CC) $(CFLAGS) -c kernel/test_uart_string.c -o kernel/test_uart_string.o
 
 kernel/string.o: kernel/string.c
 	$(CC) $(CFLAGS) -c kernel/string.c -o kernel/string.o

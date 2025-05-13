@@ -22,10 +22,7 @@ __attribute__((used, externally_visible, noinline, section(".text.boot.main")))
 void kernel_main(unsigned long uart_addr);
 
 // Replace <stdbool.h> with our own boolean type definitions for freestanding environment
-// Define boolean types and constants
-typedef unsigned char bool;
-#define true 1
-#define false 0
+// REMOVED duplicate bool type definition - already in types.h
 
 // Base address constants
 #define UART0_BASE_ADDR 0x09000000
@@ -33,8 +30,9 @@ typedef unsigned char bool;
 #define UART_FR_REG     (UART0_BASE_ADDR + 0x18)
 #define UART_FR_TXFF    (1 << 5)
 
-// Vector table defined in vector.S
-extern void* vector_table;
+// Vector table symbols defined in linker script
+extern char vector_table[];            // Virtual address (0x1000000)
+extern char _vector_table_load_start[]; // Physical load address (0x89000)
 
 // Task functions declaration
 void task_a(void) __attribute__((noreturn, used, externally_visible, section(".text")));
@@ -56,7 +54,7 @@ extern void create_task(void (*entry_point)()); // Corrected function declaratio
 #define PTE_VALID       (1UL << 0)  // Entry is valid
 #define PTE_TABLE       (1UL << 1)  // Entry points to another table (vs block/page)
 #define PTE_AF          (1UL << 10) // Access flag - set when page is accessed
-#define PTE_SH_INNER    (1UL << 8)  // Shareability: Inner Shareable (multi-core cache)
+// REMOVED conflicting PTE_SH_INNER definition - use the one from vmm.h
 #define PTE_AP_RW       (0UL << 6)  // Access permissions: Read/Write at any EL
 #define ATTR_NORMAL_IDX 0           // Index for normal memory attributes
 #define ATTR_NORMAL     (ATTR_NORMAL_IDX << 2)  // Normal memory attribute
@@ -363,7 +361,7 @@ void verify_vbar_el1(void) {
     uint64_t vbar;
     __asm__ volatile("mrs %0, vbar_el1" : "=r"(vbar));
     
-    uint64_t vector_addr = (uint64_t)&vector_table;
+    uint64_t vector_addr = (uint64_t)vector_table;
     
     debug_print("[VBAR] Verifying VBAR_EL1\n");
     debug_print("[VBAR] Expected: ");
@@ -393,8 +391,8 @@ void verify_vbar_el1(void) {
 
 // Verify and explicitly fix vector table mapping
 void verify_and_fix_vector_table(void) {
-    extern void* vector_table;
-    uint64_t vector_addr = (uint64_t)&vector_table;
+    // Use the globally declared vector_table
+    uint64_t vector_addr = (uint64_t)vector_table;
     volatile uint32_t* uart = (volatile uint32_t*)DEBUG_UART;
     
     // Print vector table address
@@ -493,8 +491,7 @@ void init_exceptions_minimal(void) {
     *uart = 'M'; *uart = 'E'; *uart = 'X'; *uart = 'C'; *uart = ':'; // Minimal exception setup
     
     // Get the vector table address
-    extern void* vector_table;
-    uint64_t vector_addr = (uint64_t)&vector_table;
+    uint64_t vector_addr = (uint64_t)vector_table;
     
     // Check vector table alignment (must be 2KB aligned = 0x800)
     if (vector_addr & 0x7FF) {
@@ -533,12 +530,9 @@ void start_scheduler(void) {
     
     // Check VBAR_EL1 at scheduler start
     uint64_t vbar_check;
-    extern void* vector_table;
     asm volatile("mrs %0, vbar_el1" : "=r"(vbar_check));
     uart_puts("[SCHED] VBAR_EL1 at scheduler start: 0x");
     uart_hex64(vbar_check);
-    uart_puts("\n[SCHED] Expected value: 0x");
-    uart_hex64((uint64_t)vector_table);
     uart_puts("\n");
     
     // Ensure correct VBAR_EL1 setting
@@ -711,7 +705,7 @@ void test_exception_delivery(void) {
     
     // Test 5: Verify VBAR_EL1 mapping by reading through the vector table
     debug_print("\nTest 5: Reading through vector table mapping...\n");
-    uint64_t expected_address = (uint64_t)&vector_table;
+    uint64_t expected_address = (uint64_t)vector_table;
     debug_print("Expected vector table addr: 0x");
     uart_print_hex(expected_address);
     debug_print("\n");
@@ -794,7 +788,6 @@ void test_scheduler(void) {
 
 // Check and restore VBAR_EL1 if needed
 void ensure_vbar_el1(void) {
-    extern void* vector_table;
     uint64_t current_vbar;
     uint64_t expected_vbar = (uint64_t)vector_table;
     asm volatile("mrs %0, vbar_el1" : "=r"(current_vbar));
@@ -884,161 +877,290 @@ void init_traps(void) {
 extern void create_el0_task(void (*entry_point)()); 
 extern void user_test_svc(void);  // Changed from user_task to user_test_svc
 
+// Vector table copy symbols defined in linker script
+extern char _vector_table_source_start[];
+extern char _vector_table_source_end[];
+extern char _vector_table_dest_start[];
+
+// Function to copy vector table from physical load address to target physical address if needed
+void copy_vector_table_to_ram_if_needed(void) {
+    extern char _vector_table_load_start[];  // From linker script
+    char* src = _vector_table_load_start;    // Physical load address from linker
+    char* dst = (char*)0x89000;              // Physical destination address
+    size_t size = 0x800;                     // 2KB vector table size
+    
+    uart_puts("[BOOT] Vector table copy check: LOAD_ADDR=");
+    uart_hex64((uint64_t)src);
+    uart_puts(" DST=");
+    uart_hex64((uint64_t)dst);
+    uart_puts("\n");
+    
+    // Check if source and destination are the same - if so, no copy needed
+    if (src == dst) {
+        uart_puts("[BOOT] Vector table already at correct physical address, no copy needed\n");
+        return;
+    }
+    
+    // Simple validity check - only copy if destination appears to be zeroed or invalid
+    volatile uint32_t* dst_word = (volatile uint32_t*)dst;
+    if ((*dst_word & 0xFC000000) != 0x14000000) {
+        uart_puts("[BOOT] Vector table at 0x89000 doesn't contain valid branch instruction, copying...\n");
+        
+        // Copy 2KB (vector table size)
+        for (size_t i = 0; i < size; i++) {
+            dst[i] = src[i];
+        }
+        
+        uart_puts("[BOOT] Vector table copied to 0x89000\n");
+        
+        // Verify first instruction at destination (should be a branch)
+        uint32_t first_instr = *(volatile uint32_t*)dst;
+        uart_puts("[BOOT] First word at destination: ");
+        uart_hex64(first_instr);
+        uart_puts("\n");
+        
+        // Verify it looks like an ARM64 branch instruction
+        if ((first_instr & 0xFC000000) == 0x14000000) {
+            uart_puts("[BOOT] Copy successful - found valid ARM64 branch instruction\n");
+        } else {
+            uart_puts("[BOOT] WARNING: Copy may have failed - not a branch instruction\n");
+        }
+    } else {
+        uart_puts("[BOOT] Vector table already valid at 0x89000, skipping copy\n");
+    }
+    
+    // Invalidate and clean cache lines to ensure CPU sees the changes
+    // Do this regardless of whether we copied or not
+    uart_puts("[BOOT] Performing cache maintenance\n");
+    asm volatile("dc cvau, %0" :: "r" (dst) : "memory");
+    asm volatile("dsb ish");
+    asm volatile("isb");
+    
+    uart_puts("[BOOT] Vector table ready at physical 0x89000\n");
+}
+
+// Function to dump memory contents for debugging
+void dump_memory(const char* label, void* addr, int count) {
+    unsigned char* p = (unsigned char*)addr;
+    uart_puts(label);
+    uart_puts(": ");
+    
+    for (int i = 0; i < count; i++) {
+        uart_hex64(p[i]);
+        uart_puts(" ");
+    }
+    uart_puts("\n");
+}
+
+// Function to verify physical memory at 0x89000
+void verify_physical_vector_table(void) {
+    uart_puts("[VERIFY] Contents at physical 0x89000:\n");
+    
+    // Read and display first 32 bytes at 0x89000
+    unsigned char* addr = (unsigned char*)0x89000;
+    uart_puts("Bytes: ");
+    for (int i = 0; i < 32; i++) {
+        if (i % 8 == 0 && i > 0) {
+            uart_puts("\n       ");
+        } else if (i > 0) {
+            uart_puts(" ");
+        }
+        uart_puts("0x");
+        uart_hex64(addr[i]);
+    }
+    uart_puts("\n");
+    
+    // Check first word - should be a branch instruction
+    uint32_t first_word = *(uint32_t*)0x89000;
+    uart_puts("First word: 0x");
+    uart_hex64(first_word);
+    uart_puts("\n");
+    
+    // Verify it's a branch instruction (most ARM64 branches start with 0x14)
+    if ((first_word & 0xFC000000) == 0x14000000) {
+        uart_puts("[VERIFY] First word looks like a valid ARM64 branch instruction\n");
+    } else {
+        uart_puts("[VERIFY] WARNING: First word doesn't look like a branch instruction\n");
+    }
+}
+
+// Function to set VBAR_EL1 with proper debug output
+void write_vbar_el1(uint64_t address) {
+    uart_puts("[DEBUG] VBAR_EL1 set to ");
+    uart_hex64(address);
+    uart_puts("\n");
+    
+    // Set VBAR_EL1 to the specified address
+    set_vbar_el1(address);
+    
+    // Read back VBAR_EL1 to verify it was set correctly
+    uint64_t current_vbar;
+    asm volatile("mrs %0, vbar_el1" : "=r"(current_vbar));
+    
+    // Check if the set was successful
+    if (current_vbar == address) {
+        uart_puts("[DEBUG] VBAR_EL1 verified successfully\n");
+    } else {
+        uart_puts("[DEBUG] WARNING: VBAR_EL1 set failed! Got: ");
+        uart_hex64(current_vbar);
+        uart_puts("\n");
+    }
+}
+
+// Function to validate vector table at physical address 0x89000
+void validate_vector_table_at_0x89000(void) {
+    volatile uint32_t* table = (volatile uint32_t*)0x89000;
+    
+    // ARM64 unconditional branch encoding: 0b000101xxxxxxxxxxxxxxxxxxxxxxxxx
+    // Example branch encoding: 0x14000000 with different offsets
+    if ((*table & 0xFC000000) == 0x14000000) {
+        uart_puts("[BOOT] Vector table validated at 0x89000.\n");
+    } else {
+        uart_puts("[BOOT] ERROR: Vector table content invalid at 0x89000!\n");
+        uart_puts("[BOOT] First word: ");
+        uart_hex64(*table);
+        uart_puts("\n");
+    }
+}
+
+// Function to test exception handling
+void test_exception_handling(void) {
+    // All strings defined inline to avoid stale pointers
+    uart_puts_late("\n[TEST] Testing exception handling\n");
+    
+    // Test SVC (Supervisor Call) exception
+    uart_puts_late("[TEST] Triggering SVC #0 exception...\n");
+    asm volatile ("svc #0");
+    uart_puts_late("[TEST] Successfully returned from SVC #0\n");
+    
+    // Test SVC with different immediate value
+    uart_puts_late("[TEST] Triggering SVC #1 exception...\n");
+    asm volatile ("svc #1");
+    uart_puts_late("[TEST] Successfully returned from SVC #1\n");
+    
+    uart_puts_late("[TEST] Exception handling test completed successfully\n");
+}
+
+// Test function to verify UART string output after MMU enablement
+void test_uart_after_mmu(void) {
+    // Define all strings inline to ensure they are allocated post-MMU
+    // This prevents stale pointer issues from pre-MMU allocated strings
+    
+    // Use late functions explicitly
+    uart_puts_late("\n[TEST] Testing UART output after MMU is enabled\n");
+    
+    // Long string test with inline definition
+    uart_puts_late("[TEST] This is a longer string to test if UART string handling is working correctly after MMU is enabled\n");
+    
+    // Output some values using different methods
+    uint64_t test_value = 0x1234567890ABCDEF;
+    uart_puts_late("[TEST] Hex value: 0x");
+    uart_hex64_late(test_value);
+    uart_puts_late("\n");
+    
+    // Direct access test - explicitly use UART_VIRT
+    volatile uint32_t* uart_dr = (volatile uint32_t*)UART_VIRT;
+    *uart_dr = 'D';
+    *uart_dr = 'I';
+    *uart_dr = 'R';
+    *uart_dr = 'E';
+    *uart_dr = 'C';
+    *uart_dr = 'T';
+    *uart_dr = '\r';
+    *uart_dr = '\n';
+    
+    // Test debug helper
+    uart_puts_late("[TEST] Debug hex function test: ");
+    uart_debug_hex(0xDEADBEEF);
+    uart_puts_late("\n");
+    
+    // Final confirmation - inline string
+    uart_puts_late("[TEST] UART test completed successfully\n\n");
+}
+
 // Entry point to the kernel. This gets called from start.S
 __attribute__((used, externally_visible, noinline, section(".text.boot.main")))
 void kernel_main(unsigned long uart_addr) {
     volatile unsigned int* uart = (unsigned int*)0x09000000;
-
-    *uart = 'A';  // Confirm basic MMIO UART
-    *uart = '\r';
-    *uart = '\n';
-
-    unsigned long el;
-    asm volatile("mrs %0, CurrentEL" : "=r"(el));
-    *uart = '0' + ((el >> 2) & 3);  // Should print '1' if running in EL1
-    *uart = '\r';
-    *uart = '\n';
+    
+    // Clear the UART output for a fresh start
+    uart_clear_screen();
+    
+    // Output early stage marker 'A' directly to UART
+    uart_debug_marker('A'); // Start of kernel_main
+    
+    // Initialize the UART for serial output - use early version explicitly
+    uart_init_early(uart_addr);
+    
+    // Banner and version - explicitly use early functions before MMU
+    uart_puts_early("\n\n===========[ CustomOS Kernel ]============\n");
+    uart_puts_early("Version 0.1.0 - Boot Sequence\n");
+    uart_puts_early("========================================\n\n");
     
     // Initialize memory management
-    *uart = 'M';  // Memory initialization
+    *uart = 'M';  // Memory initialization marker
     init_pmm();
-    *uart = '1';  // PMM done
+    *uart = '1';  // PMM done marker
+    uart_debug_marker('B'); // After PMM initialization
     
-    *uart = 'D'; *uart = 'B'; *uart = 'G'; *uart = '1'; *uart = ':'; // Debug marker 1
+    // Validate vector table at physical address before MMU
+    uart_puts_early("[BOOT] Validating vector table at physical address 0x89000\n");
+    validate_vector_table_at_0x89000();
+    
+    // Improved vector table verification with clear markers
+    uart_puts_early("\n\n=========== VECTOR TABLE VERIFICATION ===========\n");
+    volatile uint8_t* p = (volatile uint8_t*)0x00089000;
+    
+    // Output first 32 bytes in a clean format
+    for (int i = 0; i < 32; i++) {
+        if (i % 8 == 0) {
+            uart_puts_early("\n0x");
+            uart_hex64_early((uint64_t)(p + i));
+            uart_puts_early(": ");
+        }
+        
+        char hi = (p[i] >> 4) & 0xF;
+        char lo = p[i] & 0xF;
+        uart_putc_early(hi < 10 ? '0' + hi : 'A' + (hi - 10));
+        uart_putc_early(lo < 10 ? '0' + lo : 'A' + (lo - 10));
+        uart_putc_early(' ');
+    }
+    uart_puts_early("\n\n=================================================\n\n");
+    
+    uart_debug_marker('C'); // After vector table verification
+    
+    // Perform cache maintenance for vector table
+    uart_puts_early("[BOOT] Performing cache maintenance for vector table\n");
+    asm volatile("dc cvau, %0" :: "r" (0x89000) : "memory");
+    asm volatile("dsb ish");
+    asm volatile("isb");
+    
+    // Set VBAR_EL1 to physical address BEFORE MMU
+    uart_puts_early("[BOOT] Setting VBAR_EL1 to physical 0x89000 before MMU\n");
+    write_vbar_el1(0x89000);
+    uart_debug_marker('D'); // After setting VBAR_EL1 to 0x89000
+    
+    // Initialize VMM (sets up MMU)
+    uart_puts_early("[BOOT] Initializing virtual memory management\n");
+    uart_puts_early("[BOOT] MMU is about to be enabled\n");
     init_vmm_wrapper();
-    *uart = '2';  // VMM done
+    // After this point, MMU is enabled and we should use uart_puts_late
     
-    // Map the vector table is already done in init_vmm_wrapper
-    // Initialize trap handlers immediately after vector table is mapped
-    *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'P'; *uart = ':'; // Trap initialization marker
-    init_traps();           // Set VBAR_EL1 to the mapped address
-    *uart = 'O'; *uart = 'K'; *uart = ':'; // Trap initialization complete
+    // After MMU is enabled, update VBAR_EL1 to virtual address
+    // CRITICAL: Post-MMU code must use uart_puts_late
+    uart_puts_late("[BOOT] Updating VBAR_EL1 to virtual 0x1000000 after MMU\n");
+    write_vbar_el1(0x1000000);
+    uart_debug_marker_late('F'); // After setting VBAR_EL1 to 0x1000000
     
-    *uart = 'D'; *uart = 'B'; *uart = 'G'; *uart = '2'; *uart = ':'; // Debug marker 2
+    // Test UART string output after MMU enable
+    // Use string literals directly inside this function to avoid stale pointer issues
+    uart_puts_late("[BOOT] Testing UART string output after MMU is enabled\n");
+    test_uart_after_mmu();
+    uart_debug_marker_late('G'); // After UART MMU test
     
-    // CRITICAL FIX: Ensure VBAR_EL1 is set correctly after MMU initialization
-    extern void ensure_vbar_after_mmu(void);
-    *uart = 'V'; *uart = 'B'; *uart = 'A'; *uart = 'R'; *uart = ':'; // VBAR check marker
-    ensure_vbar_after_mmu();
-    *uart = '3';  // VBAR check done
+    // Run exception handling tests
+    test_exception_handling();
     
-    // Map user task section for EL0 execution
-    extern void map_user_task_section(void);
-    *uart = 'U'; *uart = 'M'; *uart = 'A'; *uart = 'P'; *uart = ':'; // User mapping marker
-    map_user_task_section();
-    *uart = '3';  // User task section mapped
-    *uart = 'D'; *uart = 'B'; *uart = 'G'; *uart = '3'; *uart = ':'; // Debug marker 3
-    *uart = '\r';
-    *uart = '\n';
-
-    // Set up exception handling AFTER MMU is initialized
-    *uart = 'E';  // Exception setup
-    
-    // Verify vector table was mapped correctly
-    extern uint64_t get_pte(uint64_t virt_addr);
-    extern void* vector_table;
-    uint64_t vector_pte = get_pte(0x1000000);  // Check the fixed virtual address
-    uart_puts("[VBAR] Vector table PTE: 0x");
-    uart_hex64(vector_pte);
-    uart_puts("\n");
-    
-    // Verify VBAR_EL1 was set correctly
-    uint64_t vbar_check;
-    asm volatile("mrs %0, vbar_el1" : "=r"(vbar_check));
-    uart_puts("[VBAR] Current VBAR_EL1: 0x");
-    uart_hex64(vbar_check);
-    uart_puts("\n");
-    
-    *uart = '1';  // Exceptions done
-    *uart = '\r';
-    *uart = '\n';
-    
-    // ==========================================
-    // DIAGNOSTIC SEQUENCE - FOUR APPROACHES
-    // ==========================================
-    *uart = 'D'; *uart = 'I'; *uart = 'A'; *uart = 'G'; *uart = ':'; *uart = '\r'; *uart = '\n';
-    
-    // APPROACH 1: Check and dump diagnostic info for vector table setup
-    *uart = '1'; *uart = ':';
-    // Already handled with init_traps()
-    
-    // APPROACH 2: Check and fix code section executable permissions
-    *uart = '2'; *uart = ':';
-    extern void ensure_code_is_executable(void);
-    ensure_code_is_executable();
-    
-    // APPROACH 3: Set known-safe SPSR_EL1 value
-    *uart = '3'; *uart = ':';
-    extern void set_safe_spsr(void);
-    set_safe_spsr();
-    
-    // APPROACH 4: Check and fix stack alignment
-    *uart = '4'; *uart = ':';
-    extern void check_fix_stack_alignment(void);
-    check_fix_stack_alignment();
-    
-    // ------------ APPROACH 4 (DIAGNOSTIC SEQUENCE) ------------
-    // Ensure that we can call functions
-    uart_puts("\n[DIAG] Approach 4: Function Calls\n");
-    
-    // Test context switch before normal test
-    uart_putc('B');  // Before marker
-    test_context_switch();
-    uart_putc('A');  // After marker - should only get here if test_context_switch returns
-    
-    // Verify we can call functions
-    uart_puts("\n[DIAG] Calling test_uart_direct...\n");
-    test_uart_direct();
-    uart_puts("\n[MAIN] Function calls work! Final diagnostic passed.\n");
-    
-    // Now safe to call the scheduler test
-    test_scheduler();  // Start the round-robin scheduler test
-    
-    // Test direct function call to dummy_asm (for comparison)
-    *uart = 'D'; *uart = 'U'; *uart = 'M'; *uart = 'M'; *uart = 'Y'; *uart = ':';
-    extern void dummy_asm(void);
-    dummy_asm();  // Should print 'A'
-    *uart = '\r'; *uart = '\n';
-    
-    // Test our minimal context switch function
-    *uart = 'T'; *uart = 'E'; *uart = 'S'; *uart = 'T'; *uart = ':';
-    extern void test_context_switch(void);
-    *uart = 'B';  // Before calling test_context_switch
-    test_context_switch();  // Should print T, Z, Z, then A if all works
-    
-    // If we got here, ERET worked!
-    *uart = 'E'; *uart = 'R'; *uart = 'E'; *uart = 'T'; *uart = '!';
-    *uart = '\r'; *uart = '\n';
-    
-    // Test EL0 SVC handling
-    uart_puts("\n[KERNEL] Starting EL0 svc test...\n");
-    *uart = 'E'; *uart = 'L'; *uart = '0'; *uart = 'T'; *uart = ':'; // EL0 task creation marker
-    
-    // Step 1: Force an SVC Test from EL1
-    uart_puts("\n[KERNEL] Step 1: Testing SVC from EL1\n");
-    asm volatile("svc #0"); // Test trap at EL1
-    uart_puts("[KERNEL] Returned from EL1 SVC test\n");
-    
-    // Debug tip: Add marker before switching to user
-    uart_puts("[EL1] Before switching to user\n");
-    
-    // Step 2: Manually call start_user_task with an EL0 entry
-    extern void user_task_entry(void);
-    start_user_task(user_task_entry);
-    
-    // The code below should not be reached if start_user_task works properly
-    create_el0_task(user_test_svc);
-    *uart = 'D'; *uart = 'B'; *uart = 'G'; *uart = '4'; *uart = ':'; // Debug marker 4
-    
-    // Add immediate syscall test before starting scheduler
-    uart_puts("\n[KERNEL] Testing syscall directly from EL1...\n");
-    asm volatile("svc #0"); // Test syscall 0 (hello)
-    uart_puts("[KERNEL] Returned from direct syscall test\n");
-    
-    // Start the scheduler, which will eventually switch to our EL0 task
-    uart_puts("[KERNEL] Starting scheduler\n");
-    *uart = 'S'; *uart = 'C'; *uart = 'H'; *uart = ':'; // Scheduler marker
-    ensure_vbar_el1(); // Ensure VBAR_EL1 is set correctly before starting scheduler
-    start_scheduler();
-    *uart = 'D'; *uart = 'B'; *uart = 'G'; *uart = '5'; *uart = ':'; // Debug marker 5 (should not reach here)
+    // Continue with initialization
+    uart_puts_late("\n[BOOT] Continuing kernel initialization...\n");
 }

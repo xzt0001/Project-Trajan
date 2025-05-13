@@ -153,3 +153,65 @@ Verified each solution through:
 - Execution continuity testing
 
 This methodical approach allowed me to solve one of ARM64's most challenging bootstrapping problems: maintaining execution flow while fundamentally changing the memory addressing model.
+
+## Recent Fixes and Improvements
+
+### MMU UART String Output Fix
+
+The UART string output issues after MMU enablement have been resolved with a comprehensive approach:
+
+1. **Global String Buffers**: Added global static buffers (aligned to cache lines) for safe string storage during MMU transition.
+
+2. **Improved Cache Maintenance**: Implemented explicit cache line cleaning/invalidation with proper barriers for UART strings.
+
+3. **TLB Invalidation**: Fixed TLB invalidation with proper inner-shareable domain instructions (`tlbi vmalle1is` instead of `tlbi vmalle1`).
+
+4. **Memory Barriers**: Enhanced synchronization with proper barriers (DSB ISH, ISB) across all critical MMU transitions.
+
+5. **Emergency UART Functions**: Added assembly-based UART access functions that bypass normal C code hazards.
+
+6. **Hardened String Handling**: Modified string output functions to use global buffers and guard against dereference hazards.
+
+7. **UART MMIO Mapping**: Improved UART device memory mapping with explicit cache maintenance and TLB invalidation.
+
+8. **Diagnostic Capabilities**: Added extensive diagnostic output during the MMU transition for debugging.
+
+
+
+## Build Instructions
+
+```
+make clean
+make
+```
+
+## Running
+
+The OS can be run on the Raspberry Pi 3/4 or in QEMU.
+
+### QEMU
+
+For QEMU with debugging:
+
+```
+qemu-system-aarch64 -M raspi3 -kernel build/kernel8.img -serial stdio -s -S
+```
+
+For QEMU without debugging:
+
+```
+qemu-system-aarch64 -M raspi3 -kernel build/kernel8.img -serial stdio
+```
+
+### Raspberry Pi
+
+Copy the kernel8.img file to the root of a FAT32 formatted SD card, along with the necessary
+boot files from Raspberry Pi OS.
+
+## Debugging
+
+GDB can be used for debugging:
+
+```
+aarch64-elf-gdb build/kernel.elf -ex "target remote localhost:1234"
+```

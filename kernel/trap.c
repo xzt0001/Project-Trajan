@@ -78,7 +78,7 @@ void sync_el0_handler(void) {
         
         // For now, after handling the syscall, just indicate we're returning to EL0
         uart_puts("[TRAP] Returning to EL0\n");
-        
+            
         // Eventually in Step 5, we'll restore user state and return properly
         // But for now, we'll still halt the system
         uart_puts("[TRAP] Halting system after syscall - NOT returning to user mode\n");

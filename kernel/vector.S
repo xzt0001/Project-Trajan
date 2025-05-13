@@ -1,7 +1,7 @@
 // Place the vector table in a dedicated section that can be aligned
 .section .text.vectors, "ax"
 // Vector table symbol is now defined in the linker script
-// We still use the global to maintain ABI compatibility
+// Still use the global to maintain ABI compatibility
 .global vector_table
 .align 11 // Ensure 2KB alignment (2^11 = 2048)
 
