@@ -3,7 +3,9 @@
 A clean, minimal operating system kernel written from scratch for AArch64 (ARMv8-A) using QEMU.  
 Includes UART logging, stack setup, physical memory management, virtual memory mapping, MMU activation, context switching, and exception handling.
 
-Future Roadmap:
+For debugging blogs, please visit: https://medium.com/@xzt0202 
+
+Future Roadmap(generalized version):
 
 Phase 4: File System and Storage
 	•	Implement a RAM-based filesystem (tmpfs-like).
@@ -90,23 +92,47 @@ Work will continue toward memory integrity enforcement, syscall verification, co
 ```
 CustomOS
 ├── boot/
-│   ├── linker.ld
-│   └── start.S
+│   ├── linker.ld            # Kernel linker script
+│   └── start.S              # Boot assembly code
 ├── kernel/
-│   ├── context.S      # Context switching code
-│   ├── main.c         # Kernel entry point
-│   ├── scheduler.c    # Task scheduling
-│   ├── trap.c         # Exception handlers
-│   ├── uart.c         # Serial console
-│   └── vector.S       # Exception vector table
+│   ├── context.S            # Context switching code
+│   ├── interrupts.c         # Interrupt handling
+│   ├── main.c               # Kernel entry point
+│   ├── scheduler.c          # Task scheduling
+│   ├── serror_debug_handler.S # System error debug handler
+│   ├── string.c             # String manipulation utilities
+│   ├── syscall.c            # System call implementation
+│   ├── task.c               # Task management
+│   ├── timer.c              # System timer implementation
+│   ├── trap.c               # Exception handlers
+│   ├── uart_early.c         # Early boot UART driver
+│   ├── uart_late.c          # Post-MMU UART driver
+│   ├── user.S               # User mode support
+│   ├── user_entry.c         # User task entry points
+│   └── vector.S             # Exception vector table
 ├── memory/
-│   ├── pmm.c          # Physical memory manager
-│   └── vmm.c          # Virtual memory manager
-└── include/
-    ├── uart.h
-    ├── pmm.h
-    ├── vmm.h
-    └── task.h
+│   ├── pmm.c                # Physical memory manager
+│   └── vmm.c                # Virtual memory manager
+├── include/
+│   ├── debug.h              # Debugging utilities
+│   ├── interrupts.h         # Interrupt declarations
+│   ├── kernel.h             # Kernel-wide definitions
+│   ├── pmm.h                # Physical memory declarations
+│   ├── scheduler.h          # Scheduler declarations
+│   ├── string.h             # String utilities
+│   ├── syscall.h            # System call definitions
+│   ├── task.h               # Task management declarations
+│   ├── timer.h              # Timer declarations
+│   ├── types.h              # Common type definitions
+│   ├── uart.h               # UART driver interface
+│   └── vmm.h                # Virtual memory declarations
+└── scripts/
+    ├── run_debug.sh         # Run with GDB debugging
+    ├── run_gui_mode.sh      # Run with QEMU GUI
+    ├── run_monitor_telnet.sh # Run with monitor over telnet
+    ├── run_nographic.sh     # Run in nographic mode
+    ├── run_serial_file.sh   # Run with serial output to file
+    └── run_serial_stdio.sh  # Run with serial output to stdio
 ```
 
 ## 🛠 Build Instructions
@@ -122,37 +148,6 @@ make
 qemu-system-aarch64 -M virt -cpu cortex-a53 -nographic -kernel build/kernel8.img
 ```
 
-## Debugging Methodology: MMU Enablement Case Study
-
-My approach to debugging the complex MMU transition problem demonstrates the systematic methodology used throughout this project:
-
-### 1. Problem Instrumentation
-Added comprehensive logging at critical transition points, capturing:
-- Register state before/after MMU enablement
-- Page table entry validity
-- Memory mapping verification
-- Stack alignment checks
-- Executable permission verification
-
-### 2. Hypothesis-Driven Debugging
-Identified three potential failure points:
-- Vector table accessibility post-MMU enablement
-- Program counter translation continuity
-- Exception handling race conditions
-
-### 3. Controlled Experiments
-For each hypothesis, I implemented targeted solutions:
-- Direct mapping of vector table to known virtual address
-- Identity mapping of transition code
-- VBAR_EL1 update sequencing
-
-### 4. Verification
-Verified each solution through:
-- Memory permission bit inspection
-- Register state validation
-- Execution continuity testing
-
-This methodical approach allowed me to solve one of ARM64's most challenging bootstrapping problems: maintaining execution flow while fundamentally changing the memory addressing model.
 
 ## Recent Fixes and Improvements
 
@@ -202,15 +197,6 @@ For QEMU without debugging:
 ```
 qemu-system-aarch64 -M raspi3 -kernel build/kernel8.img -serial stdio
 ```
-
-### Raspberry Pi
-
-Copy the kernel8.img file to the root of a FAT32 formatted SD card, along with the necessary
-boot files from Raspberry Pi OS.
-
-## Debugging
-
-GDB can be used for debugging:
 
 ```
 aarch64-elf-gdb build/kernel.elf -ex "target remote localhost:1234"
