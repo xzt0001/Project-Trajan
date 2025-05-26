@@ -3,6 +3,8 @@
 A clean, minimal operating system kernel written from scratch for AArch64 (ARMv8-A) using QEMU.  
 Includes UART logging, stack setup, physical memory management, virtual memory mapping, MMU activation, context switching, and exception handling.
 
+To those who need clarification: This platform is for simulation only, not deployment.
+
 For debugging blogs, Q&A, please visit: https://medium.com/@xzt0202 
 
 
@@ -14,8 +16,6 @@ Why are you doing this OS project in the first place?
 Answer: I developed a strong interest in malware that operates at the kernel level since I learned about Pegasus story, especially when it come to behaviors like privilege escalation, trap hijacking, and stealth persistence across MMU transitions. So I decided to build my own OS from the ground up with the long term goal of simulation Pegasus style APT at the kernel level without raising ethical concerns.
 
 That said, the immediate goal, and top priority for the moment would be mastering the internal workings of operating systems at the lowest level through hands on development. 
-
-I’m sharing this with academia not because I think this project is complete nor do I think I’m a experienced system engineer, but because I value critiques, especially from those fields that I haven’t fully explored, like cryptography, sandbox design, or privacy preserving related fields. If you see this work might intersect with your domain or poses risks that I haven't considered, I would truly appreciate your insight.
 
 
 Future Roadmap(generalized version):
