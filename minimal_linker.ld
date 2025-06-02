@@ -12,6 +12,11 @@ SECTIONS {
         *(.text)           /* Other code */
     }
     
+    /* Special MMU continuation section - explicitly placed and aligned */
+    .text.mmu_continuation : ALIGN(4096) {
+        *(.text.mmu_continuation)
+    }
+    
     /* Read-only data */
     .rodata : { 
         *(.rodata) 
