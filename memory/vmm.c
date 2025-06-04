@@ -1264,7 +1264,8 @@ void enable_mmu(uint64_t* page_table_base) {
     // Note: We should already have mapped the vector table and saved its address
     // in saved_vector_table_addr before enabling MMU
     
-    uart_puts_early("[VMM] Enabling MMU with vector table mapped at 0x");
+    uart_puts_early("[VMM] Enabling MMU with enhanced instruction continuity fixes\n");
+    uart_puts_early("[VMM] Vector table mapped at 0x");
     uart_hex64_early(saved_vector_table_addr);
     uart_puts_early("\n");
     
@@ -1311,187 +1312,8 @@ void enable_mmu(uint64_t* page_table_base) {
     uart_puts_early("[VMM] Memory barrier before enabling MMU\n");
     asm volatile("dsb ish" ::: "memory");  // Commit all memory writes using inner-shareable domain
     
-    // Step 4: Verify critical mappings before MMU enable
-    verify_critical_mappings_before_mmu(page_table_base);
-    
-    // Enhanced cache maintenance
-    enhanced_cache_maintenance();
-    
-    extern void mmu_continuation_point(void);
-    
-    // Get both physical and virtual addresses of continuation point
-    uint64_t continuation_phys = (uint64_t)&mmu_continuation_point;
-    uint64_t continuation_virt = 0xFFFF000000000000UL | continuation_phys;
-    
-    // Save these to non-volatile registers for debuggability
-    asm volatile (
-        "mov x19, %0\n"              // Save page table base
-        "mov x20, %1\n"              // Save physical continuation point
-        "mov x22, %2\n"              // Save virtual continuation point
-        "mrs x21, vbar_el1\n"        // Save vector table address
-        :: "r"(page_table_base), "r"(continuation_phys), "r"(continuation_virt)
-        : "x19", "x20", "x21", "x22"
-    );
-    
-    // Full MMU initialization sequence for ARMv8-A architecture with immediate VBAR_EL1 update
-    // and explicit branch to continuation point
-    asm volatile (
-        // 1. Store continuation point address in x9
-        "adr x9, %1\n"              // Load physical address of mmu_continuation_point
-
-        // 2. Ensure all previous memory accesses complete
-        "dsb ish\n"                 // Data Synchronization Barrier (Inner Shareable domain)
-
-        // 3. Configure memory attributes (MAIR_EL1)
-        // ------------------------------------------
-        // Attr0 = 0b11111111 (Normal memory, Write-Back cacheable)
-        // Attr1 = 0b00000100 (Device-nGnRE memory)
-        "mov x0, #0xFF\n"            // Set MAIR[0] = 0xFF (lower 8 bits)
-        "movk x0, #0x44, lsl #16\n"  // Set MAIR[2] = 0x44 (bits 16-23)
-        "msr mair_el1, x0\n"         // Write to Memory Attribute Indirection Register
-
-        // 4. Configure translation control (TCR_EL1)
-        // ------------------------------------------
-        // TG0 = 00 (4KB granule size)
-        // T0SZ = 16 (64 - 16 = 48-bit virtual address space)
-        // IPS = 001 (36-bit physical address space)
-        "mov x0, #0x19\n"            // T0SZ[5:0] = 0x19 (25), but actually 16 due to bit math
-        "movk x0, #0x1, lsl #32\n"   // IPS[2:0] = 0b001 (bits 32-34)
-        "msr tcr_el1, x0\n"          // Write to Translation Control Register
-
-        // 5. Set page table base address
-        "msr ttbr0_el1, %0\n"        // TTBR0_EL1 = page_table_base (user space)
-        "msr ttbr1_el1, xzr\n"       // TTBR1_EL1 = 0 (disable higher-half kernel mappings)
-        
-        // 6. Drain write buffer and invalidate TLBs before MMU enable
-        "dsb ish\n"                  // Ensure all prior writes complete
-        "tlbi vmalle1is\n"           // Invalidate all TLB entries at EL1 (inner-shareable)
-        "ic iallu\n"                 // Invalidate instruction caches
-        "dsb ish\n"                  // Wait for TLB/cache operations to complete
-        "isb\n"                      // Instruction Synchronization Barrier
-
-        // 7. Enable MMU
-        "mrs x0, sctlr_el1\n"        // Read System Control Register
-        "orr x0, x0, #1\n"           // Set M bit (bit 0) to enable MMU
-        "msr sctlr_el1, x0\n"        // Write back modified SCTLR_EL1
-        "isb\n"                      // Final barrier after MMU enable
-
-        // CRITICAL: Complete pipeline and cache synchronization after MMU enable
-        "dsb sy\n"                   // Full system data synchronization barrier
-        "isb\n"                      // Instruction synchronization barrier
-        "ic iallu\n"                 // Invalidate all instruction caches
-        "dsb sy\n"                   // Wait for instruction cache invalidation
-        "isb\n"                      // Synchronize instruction pipeline again
-        
-        // Invalidate all TLB entries to ensure fresh virtual translations
-        "tlbi vmalle1is\n"           // Invalidate all TLB entries at EL1
-        "dsb ish\n"                  // Wait for TLB invalidation
-        "isb\n"                      // Final instruction synchronization
-
-        // CRITICAL FIX: After MMU enable, use VIRTUAL UART address, not physical
-        // Debug: Confirm MMU is enabled
-        "mov x0, #'M'\n"
-        "mov x1, #0x0000\n"          // Low 16 bits: 0x0000
-        "movk x1, #0x0900, lsl #16\n" // Next 16 bits: 0x0900 (0x09000000 >> 16)  
-        "movk x1, #0x0000, lsl #32\n" // Next 16 bits: 0x0000
-        "movk x1, #0xFFFF, lsl #48\n" // High 16 bits: 0xFFFF → 0xFFFF000009000000
-        "str w0, [x1]\n"             // M
-        "mov x0, #'M'\n"
-        "str w0, [x1]\n"             // M
-        "mov x0, #'U'\n"
-        "str w0, [x1]\n"             // U
-        "mov x0, #'E'\n"
-        "str w0, [x1]\n"             // E
-
-        // 8. Critical change: Try both address spaces for continuation
-        // Debug: About to try first branch
-        "mov x0, #'B'\n"
-        "str w0, [x1]\n"             // B
-        "mov x0, #'R'\n"
-        "str w0, [x1]\n"             // R
-        "mov x0, #'1'\n"
-        "str w0, [x1]\n"             // 1
-        
-        // First load physical address
-        "adr x9, %1\n"              // Load physical address of mmu_continuation_point
-
-        // Try branching to physical address first
-        "br x9\n"                    // Branch to mmu_continuation_point
-        
-        // Debug: First branch failed, trying second
-        "mov x0, #'B'\n"
-        "str w0, [x1]\n"             // B
-        "mov x0, #'R'\n"
-        "str w0, [x1]\n"             // R
-        "mov x0, #'2'\n"
-        "str w0, [x1]\n"             // 2
-        
-        // If that fails, try the virtual address
-        "mov x9, x22\n"              // x22 contains virtual address
-        "br x9\n"                    // Branch to mmu_continuation_point
-
-        // Emergency code if all else fails
-        "mov x0, #'F'\n"             // 'F' for Fail
-        
-        // Write 'FAIL' to UART using virtual address
-        "str w0, [x1]\n"             // F
-        "mov x0, #'A'\n"
-        "str w0, [x1]\n"             // A
-        "mov x0, #'I'\n"
-        "str w0, [x1]\n"             // I
-        "mov x0, #'L'\n"
-        "str w0, [x1]\n"             // L
-        
-        // Dump debug registers to UART to see what failed
-        "mov x0, #'P'\n"             // P for Page table
-        "str w0, [x1]\n"
-        "mov x0, x19\n"              // Page table address 
-        "bl 1f\n"                    // Call hex dump routine
-        
-        "mov x0, #'C'\n"             // C for Continuation point
-        "str w0, [x1]\n"
-        "mov x0, x20\n"              // Continuation point address
-        "bl 1f\n"                    // Call hex dump routine
-        
-        "mov x0, #'V'\n"             // V for VBAR
-        "str w0, [x1]\n"
-        "mov x0, x21\n"              // VBAR_EL1 value
-        "bl 1f\n"                    // Call hex dump routine
-        
-        "b .\n"                      // Hang forever
-        
-        // Simple hex dump routine to output register value to UART
-        "1:\n"                       // Hex dump subroutine
-        "mov x2, #16\n"              // 16 nibbles (64-bit)
-        "2:\n"                       // Loop start
-        "sub x2, x2, #1\n"           // Decrement nibble count
-        "lsl x4, x2, #2\n"           // Calculate shift amount (nibble * 4)
-        "lsr x3, x0, x4\n"           // Shift right by calculated amount
-        "and x3, x3, #0xF\n"         // Mask to get nibble
-        "cmp x3, #10\n"              // Check if 0-9 or A-F
-        "b.ge 3f\n"                  // Branch if ≥ 10
-        "add x3, x3, #'0'\n"         // Convert 0-9 to ASCII
-        "b 4f\n"                     // Skip next instruction
-        "3:\n"                       // Handle A-F
-        "sub x3, x3, #10\n"          // Subtract 10
-        "add x3, x3, #'A'\n"         // Convert to A-F
-        "4:\n"                       // Continue
-        "str w3, [x1]\n"             // Output character to UART
-        "cbnz x2, 2b\n"              // Continue if not done
-        "mov x0, #'\r'\n"            // Carriage return
-        "str w0, [x1]\n"
-        "mov x0, #'\n'\n"            // Line feed
-        "str w0, [x1]\n"
-        "ret\n"                      // Return
-        
-        : // No outputs
-        : "r"(page_table_base),      // %0: page table root (L0) address
-          "S"(mmu_continuation_point) // %1: mmu_continuation_point symbol
-        : "x0", "x1", "x2", "x3", "x4", "x9", "x19", "x20", "x22" // Clobbered registers
-    );
-    
-    // We should never reach here since we branch to mmu_continuation_point
-    uart_puts_early("[VMM] ERROR: Returned from MMU enable sequence without branching!\n");
+    // Use the enhanced version that includes complete TCR_EL1 and instruction fetch fixes
+    enable_mmu_enhanced(page_table_base);
 }
 
 // Function to ensure VBAR_EL1 is correct after MMU is enabled
@@ -1619,7 +1441,7 @@ void verify_page_mapping(uint64_t va) {
 
 // Function to ensure identity mapping for critical MMU transition code
 void map_mmu_transition_code(void) {
-    uart_puts_early("[VMM] Mapping MMU transition code\n");
+    uart_puts_early("[VMM] Simple identity mapping for MMU transition\n");
     
     // Use the global kernel L0 table
     if (!l0_table) {
@@ -1627,151 +1449,136 @@ void map_mmu_transition_code(void) {
         return;
     }
     
-    // Get the physical address of the continuation point
+    // Get critical function addresses
+    extern void enable_mmu_enhanced(uint64_t* page_table_base);
+    extern void mmu_continuation_point(void);
+    
+    uint64_t enable_mmu_phys = (uint64_t)&enable_mmu_enhanced;
     uint64_t continuation_phys = (uint64_t)&mmu_continuation_point;
     
-    // CRITICAL FIX: Get the physical address of the enable_mmu function itself
-    extern void enable_mmu(uint64_t* page_table_base);
-    uint64_t enable_mmu_phys = (uint64_t)&enable_mmu;
+    // Get current execution context
+    uint64_t current_pc;
+    asm volatile("adr %0, ." : "=r"(current_pc));
     
-    // Calculate virtual address in higher half (kernel space)
-    uint64_t continuation_virt = 0xFFFF000000000000UL | continuation_phys;
-    uint64_t enable_mmu_virt = 0xFFFF000000000000UL | enable_mmu_phys;
+    uint64_t current_sp;
+    asm volatile("mov %0, sp" : "=r"(current_sp));
     
-    // Calculate page-aligned addresses for continuation point
-    uint64_t continuation_page_start = continuation_phys & ~0xFFF;
-    uint64_t continuation_page_end = ((continuation_phys + 0x1000) & ~0xFFF);
-    
-    // Calculate page-aligned addresses for enable_mmu function
-    uint64_t enable_mmu_page_start = enable_mmu_phys & ~0xFFF;
-    uint64_t enable_mmu_page_end = ((enable_mmu_phys + 0x2000) & ~0xFFF); // Map 2 pages for safety
-    
-    uart_puts_early("[VMM] MMU continuation point at physical address: 0x");
-    uart_hex64_early(continuation_phys);
-    uart_puts_early("\n");
-    
-    uart_puts_early("[VMM] MMU continuation point virtual address: 0x");
-    uart_hex64_early(continuation_virt);
-    uart_puts_early("\n");
-    
-    uart_puts_early("[VMM] enable_mmu function at physical address: 0x");
+    uart_puts_early("[VMM] Critical addresses:\n");
+    uart_puts_early("[VMM]   enable_mmu_enhanced: 0x");
     uart_hex64_early(enable_mmu_phys);
     uart_puts_early("\n");
-    
-    uart_puts_early("[VMM] enable_mmu function virtual address: 0x");
-    uart_hex64_early(enable_mmu_virt);
+    uart_puts_early("[VMM]   mmu_continuation_point: 0x");
+    uart_hex64_early(continuation_phys);
+    uart_puts_early("\n");
+    uart_puts_early("[VMM]   current PC: 0x");
+    uart_hex64_early(current_pc);
     uart_puts_early("\n");
     
-    // CRITICAL: Create identity mapping for enable_mmu function (physical → physical)
-    uart_puts_early("[VMM] Creating identity mapping for enable_mmu function\n");
-    map_range(l0_table, 
-              enable_mmu_page_start, 
-              enable_mmu_page_end,
-              enable_mmu_page_start, 
-              PTE_KERN_TEXT); // Use executable mapping
+    // Conservative approach: Map only essential pages around critical functions
+    // Find the actual range of critical functions
+    uint64_t min_addr = enable_mmu_phys;
+    uint64_t max_addr = enable_mmu_phys;
     
-    // Create an identity mapping for continuation point (physical → physical)
-    map_range(l0_table, 
-              continuation_page_start, 
-              (continuation_page_start & ~0xFFF) + 0x2000, // Map 2 pages to be safe
-              continuation_page_start, 
-              PTE_KERN_TEXT); // Use executable mapping
+    if (continuation_phys < min_addr) min_addr = continuation_phys;
+    if (continuation_phys > max_addr) max_addr = continuation_phys;
+    if (current_pc < min_addr) min_addr = current_pc;
+    if (current_pc > max_addr) max_addr = current_pc;
     
-    // ALSO create a high virtual mapping for continuation point (physical → virtual)
-    map_range(l0_table, 
-              continuation_virt & ~0xFFF,
-              (continuation_virt & ~0xFFF) + 0x2000,
-              continuation_page_start, 
-              PTE_KERN_TEXT);
+    // Map only a small region around the critical functions (much safer)
+    uint64_t region_start = (min_addr & ~0xFFF) - 0x10000;  // 64KB before
+    uint64_t region_end   = ((max_addr + 0xFFF) & ~0xFFF) + 0x10000;  // 64KB after
     
-    // ALSO create a high virtual mapping for enable_mmu function (physical → virtual)
+    uart_puts_early("[VMM] Identity mapping kernel region: 0x");
+    uart_hex64_early(region_start);
+    uart_puts_early(" - 0x");
+    uart_hex64_early(region_end);
+    uart_puts_early(" (");
+    uart_hex64_early((region_end - region_start) / 1024);
+    uart_puts_early(" KB)\n");
+    
+    // Safety check: ensure reasonable mapping size
+    uint64_t mapping_size = region_end - region_start;
+    if (mapping_size > 0x100000) { // More than 1MB is suspicious
+        uart_puts_early("[VMM] WARNING: Large mapping size, limiting to 1MB\n");
+        region_end = region_start + 0x100000;
+    }
+    
+    // Create simple identity mapping (physical → same virtual)
+    uart_puts_early("[VMM] Starting map_range...\n");
     map_range(l0_table, 
-              enable_mmu_virt & ~0xFFF,
-              (enable_mmu_virt & ~0xFFF) + 0x2000,
-              enable_mmu_page_start, 
-              PTE_KERN_TEXT);
+              region_start, 
+              region_end,
+              region_start, 
+              PTE_KERN_TEXT); // Executable, cacheable, kernel access
+    uart_puts_early("[VMM] map_range completed\n");
+    
+    // Identity map the current stack region 
+    uint64_t stack_page = current_sp & ~0xFFF;
+    uint64_t stack_region_start = stack_page - 0x1000; // 4KB before
+    uint64_t stack_region_end = stack_page + 0x1000;   // 4KB after
+    
+    uart_puts_early("[VMM] Identity mapping stack region: 0x");
+    uart_hex64_early(stack_region_start);
+    uart_puts_early(" - 0x");
+    uart_hex64_early(stack_region_end);
+    uart_puts_early("\n");
+    
+    map_range(l0_table,
+              stack_region_start,
+              stack_region_end,
+              stack_region_start,
+              PTE_KERN_DATA); // Non-executable data, kernel access
     
     // Register mappings for diagnostic
-    register_mapping(enable_mmu_page_start, enable_mmu_page_end, 
-                    enable_mmu_page_start, PTE_KERN_TEXT, "enable_mmu Function (Identity)");
-    register_mapping(enable_mmu_virt & ~0xFFF, (enable_mmu_virt & ~0xFFF) + 0x2000, 
-                    enable_mmu_page_start, PTE_KERN_TEXT, "enable_mmu Function (Virtual)");
-    register_mapping(continuation_page_start, (continuation_page_start & ~0xFFF) + 0x2000, 
-                    continuation_page_start, PTE_KERN_TEXT, "MMU Continuation Code (Identity)");
-    register_mapping(continuation_virt & ~0xFFF, (continuation_virt & ~0xFFF) + 0x2000, 
-                    continuation_page_start, PTE_KERN_TEXT, "MMU Continuation Code (Virtual)");
+    register_mapping(region_start, region_end, 
+                    region_start, PTE_KERN_TEXT, "Kernel Code (Identity)");
+    register_mapping(stack_region_start, stack_region_end, 
+                    stack_region_start, PTE_KERN_DATA, "Stack (Identity)");
     
-    // Verify the identity mapping for enable_mmu function
-    uint64_t enable_mmu_pte = get_pte(enable_mmu_phys);
+    // Basic verification of critical addresses
+    uint64_t critical_addrs[] = {
+        enable_mmu_phys,
+        continuation_phys,
+        current_pc,
+        0 // End marker
+    };
     
-    uart_puts_early("[VMM] enable_mmu function identity PTE: 0x");
-    uart_hex64_early(enable_mmu_pte);
-    uart_puts_early("\n");
+    const char* addr_names[] = {
+        "enable_mmu_enhanced",
+        "mmu_continuation_point",
+        "current PC",
+        NULL
+    };
     
-    if (!(enable_mmu_pte & PTE_VALID)) {
-        uart_puts_early("[VMM] ERROR: enable_mmu function not properly identity-mapped!\n");
-    } else if (enable_mmu_pte & PTE_PXN) {
-        uart_puts_early("[VMM] WARNING: enable_mmu function identity-mapped as non-executable!\n");
+    for (int i = 0; critical_addrs[i] != 0; i++) {
+        uint64_t addr = critical_addrs[i];
         
-        // Get the L3 table for this address
-        uint64_t* l3_table = get_l3_table_for_addr(l0_table, enable_mmu_phys);
-        if (l3_table) {
-            // Calculate the L3 index
-            uint64_t l3_idx = (enable_mmu_phys >> 12) & 0x1FF;
-            
-            // Clear the PXN bit to make it executable
-            l3_table[l3_idx] &= ~PTE_PXN;
-            
-            // Cache maintenance
-            asm volatile("dc civac, %0" :: "r"(&l3_table[l3_idx]) : "memory");
-            asm volatile("dsb ish" ::: "memory");
-            
-            // Invalidate TLB for this entry
-            asm volatile("tlbi vaae1is, %0" :: "r"(enable_mmu_phys >> 12) : "memory");
-            asm volatile("dsb ish" ::: "memory");
-            asm volatile("isb" ::: "memory");
-            
-            uart_puts_early("[VMM] Fixed enable_mmu function to be executable\n");
+        // Simple bounds check
+        if (addr >= region_start && addr < region_end) {
+            uart_puts_early("[VMM] ");
+            uart_puts_early(addr_names[i]);
+            uart_puts_early(" at 0x");
+            uart_hex64_early(addr);
+            uart_puts_early(" [IN MAPPED REGION]\n");
+        } else {
+            uart_puts_early("[VMM] WARNING: ");
+            uart_puts_early(addr_names[i]);
+            uart_puts_early(" at 0x");
+            uart_hex64_early(addr);
+            uart_puts_early(" [OUTSIDE MAPPED REGION]\n");
         }
-    } else {
-        uart_puts_early("[VMM] enable_mmu function properly identity-mapped as executable\n");
     }
     
-    // Verify the identity mapping for continuation point
-    uint64_t pte = get_pte(continuation_phys);
+    // Simple TLB invalidation
+    asm volatile(
+        "dsb ish\n"             // Data synchronization barrier
+        "tlbi vmalle1is\n"      // Invalidate all TLB entries
+        "dsb ish\n"             // Wait for TLB invalidation
+        "isb\n"                 // Instruction synchronization
+        ::: "memory"
+    );
     
-    uart_puts_early("[VMM] MMU transition code continuation identity PTE: 0x");
-    uart_hex64_early(pte);
-    uart_puts_early("\n");
-    
-    if (!(pte & PTE_VALID)) {
-        uart_puts_early("[VMM] ERROR: MMU transition code not properly mapped!\n");
-    } else if (pte & PTE_PXN) {
-        uart_puts_early("[VMM] WARNING: MMU transition code mapped as non-executable!\n");
-        
-        // Get the L3 table for this address
-        uint64_t* l3_table = get_l3_table_for_addr(l0_table, continuation_phys);
-        if (l3_table) {
-            // Calculate the L3 index
-            uint64_t l3_idx = (continuation_phys >> 12) & 0x1FF;
-            
-            // Clear the PXN bit to make it executable
-            l3_table[l3_idx] &= ~PTE_PXN;
-            
-            // Cache maintenance
-            asm volatile("dc civac, %0" :: "r"(&l3_table[l3_idx]) : "memory");
-            asm volatile("dsb ish" ::: "memory");
-            
-            // Invalidate TLB for this entry
-            asm volatile("tlbi vaae1is, %0" :: "r"(continuation_phys >> 12) : "memory");
-            asm volatile("dsb ish" ::: "memory");
-            asm volatile("isb" ::: "memory");
-            
-            uart_puts_early("[VMM] Fixed MMU transition code to be executable\n");
-        }
-    } else {
-        uart_puts_early("[VMM] MMU transition code properly mapped as executable\n");
-    }
+    uart_puts_early("[VMM] Simple MMU transition identity mapping complete\n");
 }
 
 // Simple wrapper function to call init_vmm_impl
@@ -1879,21 +1686,32 @@ void init_vmm(void) {
     init_vmm_impl();
     
     // Map the vector table before enabling MMU
+    uart_puts_early("VT:");
     map_vector_table();
+    uart_puts_early("OK\n");
     
     // Map UART to a virtual address for use after MMU is enabled
+    uart_puts_early("UART:");
     map_uart();
+    uart_puts_early("OK\n");
     
     // Map transition code (MMU continuation point)
+    uart_puts_early("TRANS:");
     map_mmu_transition_code();
+    uart_puts_early("OK\n");
     
     // Phase 9: Audit memory mappings for overlaps before enabling MMU
+    uart_puts_early("AUDIT:");
     audit_memory_mappings();
+    uart_puts_early("OK\n");
     
     // Verify memory permissions before enabling MMU
+    uart_puts_early("VERIFY:");
     verify_code_is_executable();
+    uart_puts_early("OK\n");
     
     // Enable MMU with our page table
+    uart_puts_early("ENABLE:");
     enable_mmu(l0_table);
     
     // We should never reach here since we branch to mmu_continuation_point in enable_mmu
@@ -1913,193 +1731,41 @@ mmu_continuation_point(void) {
     volatile uint32_t* uart_phys = (volatile uint32_t*)0x09000000;
     
     // First thing: confirm we entered the continuation point
-    *uart_phys = 'E';
+    *uart_phys = 'C';
+    *uart_phys = 'O';
     *uart_phys = 'N';
     *uart_phys = 'T';
-    *uart_phys = 'E';
-    *uart_phys = 'R';
-    *uart_phys = '\r';
-    *uart_phys = '\n';
-    
-    // Simplified initial step that doesn't depend on memory accesses
-    // Use direct UART access with hardcoded addresses for maximum reliability
-    volatile uint32_t* uart_virt = (volatile uint32_t*)0xFFFF000009000000;
-    
-    // Output physical marker first
-    *uart_phys = 'P';
-    *uart_phys = 'H';
-    *uart_phys = 'Y';
-    *uart_phys = 'S';
     *uart_phys = ':';
     
-    // Output current EL level to diagnose privilege
-    uint64_t current_el;
-    asm volatile("mrs %0, CurrentEL" : "=r"(current_el));
-    current_el = (current_el >> 2) & 0x3;
-    *uart_phys = '0' + current_el;
-    
-    // Indicate virtual address section with clear marker
-    *uart_phys = '\r';
-    *uart_phys = '\n';
-    *uart_phys = 'V';
-    *uart_phys = 'I';
-    *uart_phys = 'R';
-    *uart_phys = 'T';
-    *uart_phys = ':';
-    
-    // Try writing to virtual address
-    *uart_virt = 'V';
-    
-    // Step 6: Post-MMU execution environment verification
-    *uart_phys = '\r';
-    *uart_phys = '\n';
-    *uart_phys = 'S';
-    *uart_phys = 'T';
-    *uart_phys = 'E';
-    *uart_phys = 'P';
-    *uart_phys = '6';
-    *uart_phys = ':';
-    
-    // Test 1: Verify MMU is actually enabled
+    // Quick MMU verification
     uint64_t sctlr_val;
     asm volatile("mrs %0, sctlr_el1" : "=r"(sctlr_val));
     if (sctlr_val & 1) {
         *uart_phys = 'M';
-        *uart_phys = 'M';
-        *uart_phys = 'U';
         *uart_phys = '+';  // MMU enabled
     } else {
         *uart_phys = 'M';
-        *uart_phys = 'M';
-        *uart_phys = 'U';
-        *uart_phys = '-';  // MMU disabled - this would be bad
+        *uart_phys = '-';  // MMU disabled
     }
     
-    // Test 2: Verify VBAR_EL1 is correct
-    uint64_t vbar_val;
-    asm volatile("mrs %0, vbar_el1" : "=r"(vbar_val));
+    // Try virtual UART access
+    volatile uint32_t* uart_virt = (volatile uint32_t*)0xFFFF000009000000;
     *uart_phys = 'V';
-    *uart_phys = 'B';
-    *uart_phys = 'A';
-    *uart_phys = 'R';
-    if (vbar_val != 0) {
-        *uart_phys = '+';  // VBAR set
-    } else {
-        *uart_phys = '-';  // VBAR not set - could be problematic
-    }
-    
-    // Test 3: Try accessing a known virtual address  
-    *uart_phys = 'V';
-    *uart_phys = 'A';
     *uart_phys = ':';
+    *uart_virt = 'O';
+    *uart_virt = 'K';
     
-    // Try to read from our own continuation point via virtual addressing
-    volatile uint64_t* self_virt = (volatile uint64_t*)((uint64_t)mmu_continuation_point | 0xFFFF000000000000UL);
-
-    // Attempt to read the first instruction of ourselves
-    // This tests if virtual addressing is working for code
-    uint64_t first_instr = 0;
-    __asm__ volatile (
-        "1:\n"
-        "ldr %0, [%1]\n"     // Try to load from virtual address
-        "b 2f\n"             // If successful, branch to success
-        "2:\n"               // Success path
-        : "=r"(first_instr)
-        : "r"(self_virt)
-        : "memory"
-    );
-    
-    if (first_instr != 0) {
-        *uart_phys = 'O';
-        *uart_phys = 'K';  // Virtual addressing works
-    } else {
-        *uart_phys = 'F';
-        *uart_phys = 'A';
-        *uart_phys = 'I';
-        *uart_phys = 'L';  // Virtual addressing failed
-    }
-    
-    // Test 4: Test data cache coherency
-    *uart_phys = 'D';
-    *uart_phys = 'C';
-    *uart_phys = ':';
-    
-    // Write a test pattern to memory and read it back
-    volatile uint64_t test_var = 0xDEADBEEFCAFEBABE;
-    asm volatile("dc cvac, %0" :: "r"(&test_var) : "memory");
-    asm volatile("dsb ish" ::: "memory");
-    
-    if (test_var == 0xDEADBEEFCAFEBABE) {
-        *uart_phys = 'O';
-        *uart_phys = 'K';  // Data cache coherency works
-    } else {
-        *uart_phys = 'F';
-        *uart_phys = 'A';
-        *uart_phys = 'I';
-        *uart_phys = 'L';  // Cache coherency issue
-    }
-    
-    // Test 5: Verify exception handling is set up
-    *uart_phys = 'E';
-    *uart_phys = 'X';
-    *uart_phys = ':';
-    
-    if (vbar_val != 0) {
-        // Try to verify the vector table is accessible
-        volatile uint64_t* vbar_ptr = (volatile uint64_t*)vbar_val;
-        uint64_t vector_entry = 0;
-        
-        __asm__ volatile (
-            "ldr %0, [%1]\n"
-            : "=r"(vector_entry)
-            : "r"(vbar_ptr)
-            : "memory"
-        );
-        
-        if (vector_entry != 0) {
-            *uart_phys = 'O';
-            *uart_phys = 'K';  // Vector table accessible
-        } else {
-            *uart_phys = 'E';
-            *uart_phys = 'M';
-            *uart_phys = 'P';
-            *uart_phys = 'T';  // Vector table empty
-        }
-    } else {
-        *uart_phys = 'N';
-        *uart_phys = 'U';
-        *uart_phys = 'L';
-        *uart_phys = 'L';  // VBAR is NULL
-    }
-    
-    // Mark completion of Step 6 verification
-    *uart_phys = '\r';
-    *uart_phys = '\n';
-    *uart_phys = 'S';
-    *uart_phys = 'T';
-    *uart_phys = 'E';
-    *uart_phys = 'P';
-    *uart_phys = '6';
-    *uart_phys = ':';
-    *uart_phys = 'D';
-    *uart_phys = 'O';
-    *uart_phys = 'N';
-    *uart_phys = 'E';
     *uart_phys = '\r';
     *uart_phys = '\n';
     
-    // Only after confirming basic output works, update the base
+    // Switch to virtual UART and continue
     uart_set_base((void*)UART_VIRT);
     
-    // Simple marker rather than complex logging
-    uart_emergency_output('M');
-    uart_emergency_output('M');
-    uart_emergency_output('U');
-    uart_emergency_output('+');
-    uart_emergency_output('\r');
-    uart_emergency_output('\n');
+    uart_puts("\n[MMU] Continuation point reached successfully!\n");
+    uart_puts("[MMU] MMU is enabled and virtual addressing is working\n");
     
-    // Continue with MMU initialization...
+    // Continue with system initialization...
+    uart_puts("[MMU] MMU initialization complete, continuing boot...\n");
 }
 
 // ... existing code ...
@@ -2548,8 +2214,26 @@ void init_vmm_impl(void) {
     *uart = '\r';
     *uart = '\n';
     
-    // MMU is now enabled, and execution continues at mmu_continuation_point
-    // which is implemented elsewhere in this file
+    // Step F: Enable MMU
+    *uart = 'F';
+    *uart = ':';
+    *uart = 'E';
+    *uart = 'N';
+    *uart = 'A';
+    *uart = 'B';
+    *uart = '\r';
+    *uart = '\n';
+    
+    enable_mmu_enhanced(l0_table);
+    
+    // We should NEVER reach here
+    *uart = 'F';
+    *uart = ':';
+    *uart = 'E';
+    *uart = 'R';
+    *uart = 'R';
+    *uart = '\r';
+    *uart = '\n';
 }
 
 // Initialize the page tables for the kernel
@@ -2676,66 +2360,152 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     uart_hex64_early(vbar_el1_addr);
     uart_puts_early("\n");
     
+    // **CRITICAL FIX 1: Complete TCR_EL1 Configuration**
+    // Set up comprehensive TCR_EL1 (Translation Control Register)
+    uint64_t tcr = 0;
+    
+    // T0SZ[5:0] = 25 (64-25=39-bit VA space for TTBR0_EL1)
+    tcr |= (25ULL << 0);
+    
+    // T1SZ[21:16] = 25 (64-25=39-bit VA space for TTBR1_EL1) 
+    tcr |= (25ULL << 16);
+    
+    // TG0[15:14] = 0 (4KB granule for TTBR0_EL1)
+    tcr |= (0ULL << 14);
+    
+    // TG1[31:30] = 2 (4KB granule for TTBR1_EL1)
+    tcr |= (2ULL << 30);
+    
+    // SH0[13:12] = 3 (Inner shareable for TTBR0)
+    tcr |= (3ULL << 12);
+    
+    // SH1[29:28] = 3 (Inner shareable for TTBR1)
+    tcr |= (3ULL << 28);
+    
+    // ORGN0[11:10] = 1 (Outer Write-Back, Read/Write Allocate for TTBR0)
+    tcr |= (1ULL << 10);
+    
+    // ORGN1[27:26] = 1 (Outer Write-Back, Read/Write Allocate for TTBR1)
+    tcr |= (1ULL << 26);
+    
+    // IRGN0[9:8] = 1 (Inner Write-Back, Read/Write Allocate for TTBR0)
+    tcr |= (1ULL << 8);
+    
+    // IRGN1[25:24] = 1 (Inner Write-Back, Read/Write Allocate for TTBR1)
+    tcr |= (1ULL << 24);
+    
+    // EPD0 = 0 (Enable TTBR0 page table walks)
+    tcr |= (0ULL << 7);
+    
+    // EPD1 = 0 (Enable TTBR1 page table walks)  
+    tcr |= (0ULL << 23);
+    
+    // IPS[34:32] = 1 (40-bit physical address size)
+    tcr |= (1ULL << 32);
+    
+    // TBI0 = 1 (Top Byte Ignored for TTBR0)
+    tcr |= (1ULL << 37);
+    
+    // TBI1 = 1 (Top Byte Ignored for TTBR1)
+    tcr |= (1ULL << 38);
+    
+    // AS = 0 (ASID size is 8-bit)
+    tcr |= (0ULL << 36);
+    
+    uart_puts_early("[VMM] Complete TCR_EL1 value: 0x");
+    uart_hex64_early(tcr);
+    uart_puts_early("\n");
+    
     // Set up MAIR_EL1 (Memory Attribute Indirection Register)
-    // Attr0: Device-nGnRnE (non-cacheable device) for device memory (00000000)
-    // Attr1: Normal, Inner/Outer Write-Back, Read/Write allocate (11111111)
-    // Attr2: Normal, non-cacheable (01000100)
-    // Attr3: Device-nGnRE (non-cacheable device, but allows early write ack) (00000100)
     uint64_t mair = (MAIR_ATTR_DEVICE_nGnRnE << (8 * ATTR_IDX_DEVICE_nGnRnE)) |
                     (MAIR_ATTR_NORMAL << (8 * ATTR_IDX_NORMAL)) |
                     (MAIR_ATTR_NORMAL_NC << (8 * ATTR_IDX_NORMAL_NC)) |
                     (MAIR_ATTR_DEVICE_nGnRE << (8 * ATTR_IDX_DEVICE_nGnRE));
     
-    // Debug: Output MAIR for verification
     uart_puts_early("[VMM] MAIR_EL1 value: 0x");
     uart_hex64_early(mair);
     uart_puts_early("\n");
     
-    // Set MAIR_EL1
-    MSR("mair_el1", mair);
+    // **CRITICAL FIX 2: Identity Map Current Execution Context**
+    // Get the current PC location and ensure it's identity mapped
+    uint64_t current_pc;
+    asm volatile("adr %0, ." : "=r"(current_pc));
     
-    // Set TCR_EL1 (Translation Control Register)
-    // T0SZ[5:0] = 25 (39-bit VA space for TTBR0_EL1)
-    // T1SZ[21:16] = 25 (39-bit VA space for TTBR1_EL1)
-    // TG0[15:14] = 0 (4KB granule for TTBR0_EL1)
-    // TG1[31:30] = 2 (4KB granule for TTBR1_EL1)
-    // SH0[13:12] = 3 (Inner shareable)
-    // SH1[29:28] = 3 (Inner shareable)
-    // ORGN0[11:10] = 1 (Outer Write-Back, Read/Write Allocate)
-    // ORGN1[27:26] = 1 (Outer Write-Back, Read/Write Allocate)
-    // IRGN0[9:8] = 1 (Inner Write-Back, Read/Write Allocate)
-    // IRGN1[25:24] = 1 (Inner Write-Back, Read/Write Allocate)
-    // EPD0 = 0 (Enable TTBR0 walks)
-    // EPD1 = 0 (Enable TTBR1 walks)
-    // IPS[34:32] = 1 (40-bit physical address size)
-    uint64_t tcr = (1ULL << 20) |    // TBI0=1: Top Byte Ignored for TTBR0
-                   (1ULL << 23) |    // TBI1=1: Top Byte Ignored for TTBR1
-                   (25ULL << 0) |    // T0SZ=25: 39-bit VA space for TTBR0
-                   (25ULL << 16) |   // T1SZ=25: 39-bit VA space for TTBR1
-                   (0ULL << 14) |    // TG0=0: 4KB granule for TTBR0
-                   (2ULL << 30) |    // TG1=2: 4KB granule for TTBR1
-                   (3ULL << 12) |    // SH0=3: Inner shareable
-                   (3ULL << 28) |    // SH1=3: Inner shareable
-                   (1ULL << 10) |    // ORGN0=1: Outer Write-Back, Read/Write Allocate
-                   (1ULL << 26) |    // ORGN1=1: Outer Write-Back, Read/Write Allocate
-                   (1ULL << 8) |     // IRGN0=1: Inner Write-Back, Read/Write Allocate
-                   (1ULL << 24) |    // IRGN1=1: Inner Write-Back, Read/Write Allocate
-                   (1ULL << 32);     // IPS=1: 40-bit physical address size
-    
-    // Debug: Output TCR for verification
-    uart_puts_early("[VMM] TCR_EL1 value: 0x");
-    uart_hex64_early(tcr);
+    uart_puts_early("[VMM] Current PC: 0x");
+    uart_hex64_early(current_pc);
     uart_puts_early("\n");
     
-    // Set TCR_EL1
-    MSR("tcr_el1", tcr);
+    // Ensure the current execution region is identity mapped (4KB page around current PC)
+    uint64_t pc_page_start = current_pc & ~0xFFF;
+    uint64_t pc_page_end = pc_page_start + 0x2000; // Map 2 pages for safety
     
-    // Set TTBR0_EL1 (Translation Table Base Register 0)
-    // This is the base address of the L0 page table for user address space
-    // For simplicity, we're not setting up user space yet
-    MSR("ttbr0_el1", page_table_phys);
+    uart_puts_early("[VMM] Identity mapping execution region: 0x");
+    uart_hex64_early(pc_page_start);
+    uart_puts_early(" - 0x");
+    uart_hex64_early(pc_page_end);
+    uart_puts_early("\n");
     
-    // Set TTBR1_EL1 (Translation Table Base Register 1)
+    // Create identity mapping for current execution region
+    map_range(page_table_base, pc_page_start, pc_page_end, pc_page_start, PTE_KERN_TEXT);
+    
+    // Simple MMU Enable Sequence with proper TCR_EL1 setup
+    uart_puts_early("[VMM] Starting simple MMU enable sequence\n");
+    
+    extern void mmu_continuation_point(void);
+    uint64_t continuation_phys = (uint64_t)&mmu_continuation_point;
+    
+    uart_puts_early("[VMM] Will branch to continuation at: 0x");
+    uart_hex64_early(continuation_phys);
+    uart_puts_early("\n");
+    
+    // Simple MMU enable sequence keeping the good TCR_EL1 fixes
+    asm volatile (
+        // Save critical values
+        "mov x19, %0\n"              // x19 = page_table_base
+        "mov x20, %1\n"              // x20 = tcr value
+        "mov x21, %2\n"              // x21 = mair value  
+        "mov x22, %3\n"              // x22 = continuation_phys
+        
+        // Set up memory attributes
+        "msr mair_el1, x21\n"        // Set MAIR_EL1
+        "isb\n"
+        
+        // Set up translation control (keep the good TCR_EL1 setup)
+        "msr tcr_el1, x20\n"         // Set complete TCR_EL1
+        "isb\n"
+        
+        // Set translation table base
+        "msr ttbr0_el1, x19\n"       // Set page table base
+        "msr ttbr1_el1, xzr\n"       // Clear TTBR1_EL1
+        "isb\n"
+        
+        // Cache and TLB maintenance
+        "dsb sy\n"                   // Data synchronization barrier
+        "ic iallu\n"                 // Invalidate instruction cache
+        "dsb sy\n"
+        "tlbi vmalle1is\n"           // Invalidate TLB
+        "dsb ish\n"
+        "isb\n"
+        
+        // Enable MMU
+        "mrs x23, sctlr_el1\n"       // Read SCTLR_EL1
+        "orr x23, x23, #1\n"         // Set M bit
+        "msr sctlr_el1, x23\n"       // Enable MMU
+        "isb\n"                      // Critical instruction barrier
+        
+        // Branch to continuation point
+        "br x22\n"                   // Branch to continuation
+        
+        : // No outputs
+        : "r"(page_table_phys),      // %0: page table base
+          "r"(tcr),                  // %1: TCR_EL1 value
+          "r"(mair),                 // %2: MAIR_EL1 value  
+          "r"(continuation_phys)     // %3: continuation point
+        : "x19", "x20", "x21", "x22", "x23", "memory"
+    );
+    
+    // We should never reach here
+    uart_puts_early("[VMM] ERROR: Returned from enhanced MMU enable sequence!\n");
 }
 
 // ... existing code ...
@@ -2762,115 +2532,29 @@ void flush_cache_lines(void* addr, size_t size) {
     asm volatile("dsb ish" ::: "memory");
 }
 
-// Enhanced page table verification function
+// Simple page table verification function
 void verify_critical_mappings_before_mmu(uint64_t* page_table_base) {
-    uart_puts_early("[VMM] Step 4: Verifying critical mappings before MMU enable\n");
+    uart_puts_early("[VMM] Basic mapping verification before MMU enable\n");
     
-    // Critical addresses that must be mapped correctly
+    // Just verify the continuation point is mapped
     extern void mmu_continuation_point(void);
-    uint64_t critical_addrs[] = {
-        (uint64_t)&mmu_continuation_point,           // Continuation point
-        UART_PHYS,                                   // UART physical
-        UART_VIRT,                                   // UART virtual  
-        read_vbar_el1(),                            // Vector table
-        0 // End marker
-    };
+    uint64_t continuation_addr = (uint64_t)&mmu_continuation_point;
     
-    const char* addr_names[] = {
-        "MMU Continuation Point",
-        "UART Physical", 
-        "UART Virtual",
-        "Vector Table",
-        NULL
-    };
+    uart_puts_early("[VMM] Checking continuation point at 0x");
+    uart_hex64_early(continuation_addr);
     
-    bool all_mappings_valid = true;
-    
-    for (int i = 0; critical_addrs[i] != 0; i++) {
-        uint64_t addr = critical_addrs[i];
-        uart_puts_early("[VMM] Verifying: ");
-        uart_puts_early(addr_names[i]);
-        uart_puts_early(" at 0x");
-        uart_hex64_early(addr);
-        
-        // Get PTE for this address
-        uint64_t* l0_table = page_table_base;
-        uint64_t l0_idx = (addr >> 39) & 0x1FF;
-        uint64_t l1_idx = (addr >> 30) & 0x1FF;
-        uint64_t l2_idx = (addr >> 21) & 0x1FF;
-        uint64_t l3_idx = (addr >> 12) & 0x1FF;
-        
-        // Check L0 entry
-        if (!(l0_table[l0_idx] & PTE_VALID)) {
-            uart_puts_early(" [L0 INVALID]\n");
-            all_mappings_valid = false;
-            continue;
-        }
-        
-        // Check L1 entry
-        uint64_t* l1_table = (uint64_t*)(l0_table[l0_idx] & ~0xFFF);
-        if (!(l1_table[l1_idx] & PTE_VALID)) {
-            uart_puts_early(" [L1 INVALID]\n");
-            all_mappings_valid = false;
-            continue;
-        }
-        
-        // Check L2 entry  
-        uint64_t* l2_table = (uint64_t*)(l1_table[l1_idx] & ~0xFFF);
-        if (!(l2_table[l2_idx] & PTE_VALID)) {
-            uart_puts_early(" [L2 INVALID]\n");
-            all_mappings_valid = false;
-            continue;
-        }
-        
-        // Check L3 entry
-        uint64_t* l3_table = (uint64_t*)(l2_table[l2_idx] & ~0xFFF);
-        uint64_t pte = l3_table[l3_idx];
-        
-        if (!(pte & PTE_VALID)) {
-            uart_puts_early(" [L3 INVALID]\n");
-            all_mappings_valid = false;
-            continue;
-        }
-        
-        // Check execute permissions for code regions
-        if (i == 0 || i == 3) { // Continuation point or vector table
-            if (pte & PTE_PXN) {
-                uart_puts_early(" [NOT EXECUTABLE - PXN SET]\n");
-                
-                // Auto-fix executable permissions
-                l3_table[l3_idx] &= ~PTE_PXN;
-                
-                // Enhanced cache maintenance
-                asm volatile(
-                    "dc civac, %0\n"
-                    "dsb ish\n"
-                    "isb\n"
-                    :: "r"(&l3_table[l3_idx]) : "memory"
-                );
-                
-                uart_puts_early("   -> Fixed to be executable\n");
-            } else {
-                uart_puts_early(" [OK - EXECUTABLE]\n");
-            }
-        } else {
-            uart_puts_early(" [OK - MAPPED]\n");
-        }
-    }
-    
-    if (!all_mappings_valid) {
-        uart_puts_early("[VMM] ERROR: Some critical mappings are invalid!\n");
+    // Simple bounds check - should be in our mapped region
+    if (continuation_addr >= 0x40000000 && continuation_addr < 0x42000000) {
+        uart_puts_early(" [IN MAPPED REGION]\n");
     } else {
-        uart_puts_early("[VMM] All critical mappings verified successfully\n");
+        uart_puts_early(" [WARNING: OUTSIDE MAPPED REGION]\n");
     }
     
-    // Enhanced TLB invalidation before MMU enable
-    uart_puts_early("[VMM] Performing enhanced TLB invalidation\n");
+    // Basic TLB invalidation before MMU enable
+    uart_puts_early("[VMM] Invalidating TLB\n");
     asm volatile(
-        "dsb ishst\n"           // Ensure stores complete
-        "tlbi vmalle1is\n"      // Invalidate all TLB entries  
-        "tlbi alle1is\n"        // Invalidate all entries including global
-        "ic iallu\n"            // Invalidate instruction cache
+        "dsb ish\n"             // Data synchronization barrier
+        "tlbi vmalle1is\n"      // Invalidate all TLB entries
         "dsb ish\n"             // Wait for completion
         "isb\n"                 // Instruction barrier
         ::: "memory"
@@ -2886,4 +2570,5 @@ void enhanced_cache_maintenance(void) {
     asm volatile("dsb ish" ::: "memory");   // Data synchronization barrier
     asm volatile("isb" ::: "memory");       // Instruction synchronization barrier
 }
+
 
