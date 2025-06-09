@@ -1,5 +1,26 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with. 
 
+June 9th 2025
+
+**TLB Invalidation Fix and Dual Mapping Success**
+
+**Root Cause Identified:** The previous MMU hang was caused by inner shareable TLB invalidation operations (`tlbi vmalle1is`, `dsb ish`) attempting to coordinate with non-existent cores in single-core QEMU emulation. The system was waiting indefinitely for acknowledgments from imaginary cores.
+
+**Fix Applied:** Replaced inner shareable operations with system-wide operations(line 1639-1647 in vmm.c):
+- `dsb ish` → `dsb sy` (system-wide data synchronization) 
+- `tlbi vmalle1is` → `tlbi vmalle1` (local core TLB invalidation)
+- Removed `tlbi alle1is` (unnecessary aggressive invalidation)
+
+**Progress Achieved:**
+- **Dual address space mapping successful**: identity, virtual, stack all complete
+- **Critical function verification passed**: F0:ID+VI+, F1:ID+VI+, F2:ID+VI+ (all functions mapped in both address spaces)
+- **TLB invalidation working**: TLB: → TLB:OK → PH1:COMP 
+- **Reached MMU enable call**: F:ENAB marker from `init_vmm_impl()` before calling `enable_mmu_enhanced()`
+
+**Current Status:** System successfully completed all page table setup phases (PH1:COMP) and reached the final step in `init_vmm_impl()` where it outputs F:ENAB marker. However, the system hangs immediately when attempting to call `enable_mmu_enhanced()` function.
+
+Here is the most recent kernel log: https://docs.google.com/document/d/14IAhEB3iEmnMqrUpoDBubB-cMhbpbuhfoaIggEbS7HQ/edit?usp=sharing
+
 June 4th, 2025
 
 The problem I'm facing now is my recent "fixes" broke the MMU that was working. In Chinese you can call it as "牙膏倒吸“. 
