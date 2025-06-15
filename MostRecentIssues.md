@@ -1,5 +1,59 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with. 
 
+June 15th 2025
+
+Major problems solved:
+
+1: Debugging Infrastructure Crisis
+Problem: uart_puts_early() and all string output functions were hanging the system
+Root Cause: String manipulation functions fundamentally broken during early boot
+Solution:
+Systematic conversion to direct UART character output (*uart = 'X')
+Eliminated all string function dependencies in critical MMU code
+Result: System progressed from F:ENAB to detailed step-by-step output
+
+2: TLB Invalidation "Rug Pull" Crisis
+Problem: Aggressive TLB/cache invalidation sequence causing system hang
+Original "Rug Pull" Code:
+asm volatile(
+        "dsb ish\n"             // Data synchronization barrier
+        "tlbi vmalle1is\n"      // Invalidate all TLB entries for EL1
+        "tlbi alle1is\n"        // Invalidate all TLB entries including EL0
+        "dsb ish\n"             // Wait for TLB invalidation
+        "ic iallu\n"            // Invalidate instruction cache
+        "dsb ish\n"             // Wait for instruction cache invalidation
+        "isb\n"                 // Instruction synchronization barrier
+        ::: "memory"
+    );
+I then implemented a more conservative approach, see line 2998-3021 in vmm.c
+Result: System progressed from hanging in TLB invalidation to completing verification phase
+
+3: Page Table Architecture
+Achievements:
+L0 Page Table: Successfully allocated at 0x40000000 with proper alignment
+Multi-level Page Tables: L0→L1→L2→L3 hierarchy working correctly
+Auto-creation: Missing page table levels automatically created on-demand
+Cache Maintenance: Proper cache line flushing for all page table updates
+Memory Mapping Verification: All critical mappings verified and auto-fixed
+
+4: 7-Stage Conservative MMU Enable Sequence
+Problem: No visibility into exactly where MMU enable was failing
+Solution: Implemented staged approach with individual debug markers (MMU:1234567)
+Result: Pinpointed exact hang location to specific instruction level
+
+5: MMU Hardware Enable SUCCESS
+Problem: Uncertain if MMU enable instruction (msr sctlr_el1, x23) actually worked
+Breakthrough: System reaches MMU:1234 proving:
+Stage 1-3: All pre-MMU barriers successful
+Stage 4: msr sctlr_el1, x23 MMU ENABLE INSTRUCTION WORKS.
+Impact: Proved MMU hardware enablement is successful, system transitions to virtual addressing mode
+
+6: Virtual Addressing Transition Challenge (Current Issue)
+Problem: System hangs at Stage 5 (mov w27, #'5') - first instruction executed in virtual addressing mode
+Root Cause: UART address context issue - x26 register contains physical address (0x09000000) but system now needs virtual address (0xFFFF000009000000)
+
+Most recent kernel log: https://docs.google.com/document/d/13BAfn4JgYcijhX6pSabx4WHetFR293TtGkhGdvUXdec/edit?usp=sharing 
+
 June 9th 2025
 
 **TLB Invalidation Fix and Dual Mapping Success**
