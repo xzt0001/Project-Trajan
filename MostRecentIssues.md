@@ -1,4 +1,16 @@
-Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with. 
+Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
+
+June 18th 2025
+
+Current status: I'm debugging a critical issue during MMU enablement. The system halt as the  "msr sctlr_el1, x23\n" execute on line 2966 in vmm.c. I have ruled out a series potential errors, see debugging code from line 2734 up to 2964. At this point, I believe the probable root causes are most likely architectural violation that ARMv8 hardware caches and rejects, rather than a sutle mapping error.
+
+Potential root causes to investigate:
+1. TCR_EL1 configuration error
+2. TTBR1/TTBR0_EL1 point to the same page table
+3. Page Table physical address issue(likely not an issue, but needs to investigate)
+4. MAIR_EL1 attribute conflicts
+
+Latest kernel log, check out the last line: https://docs.google.com/document/d/1VL6uaqKs2RUYrOm3Hw5ph9sTu_uVRY9kTUl0B0ipDZw/edit?usp=sharing
 
 June 15th 2025
 

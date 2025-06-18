@@ -2687,7 +2687,7 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         
         // Set translation table base
         "msr ttbr0_el1, x19\n"       // Set page table base
-        "msr ttbr1_el1, xzr\n"       // Clear TTBR1_EL1
+        "msr ttbr1_el1, x19\n"       // Set TTBR1_EL1 to same page table (instead of xzr)
         "isb\n"
         
         // Cache and TLB maintenance
@@ -2731,25 +2731,275 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "dsb sy\n"                   // Final data synchronization
         "isb\n"                      // Final instruction synchronization
         
-        // STAGE 4: **THE CRITICAL MMU ENABLE**
+        // DEBUG 1: Exception Vector Verification
+        "mrs x28, vbar_el1\n"        // Get vector table address
+        "mov w27, #'V'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'E'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'C'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        // Output x28 (VBAR_EL1) - show relevant part (low 32 bits, high 16)
+        "and x29, x28, #0xFFFFFFFF\n" // Get low 32 bits
+        "lsr x29, x29, #16\n"        // Show high 16 bits of low 32
+        "mov w30, #12\n"             // Shift counter for 4 hex digits
+        "9:\n"                       // Hex output loop
+        "lsr x0, x29, x30\n"         // Shift to get nibble (use x0 instead of x31)
+        "and x0, x0, #0xF\n"         // Mask to 4 bits
+        "cmp x0, #10\n"
+        "b.lt 10f\n"
+        "add x0, x0, #'A'-10\n"      // Convert A-F
+        "b 11f\n"
+        "10:\n"
+        "add x0, x0, #'0'\n"         // Convert 0-9
+        "11:\n"
+        "str w0, [x26]\n"            // Output hex digit
+        "subs w30, w30, #4\n"        // Next nibble
+        "b.ge 9b\n"                  // Loop for all 4 digits
+        
+        // DEBUG 2: Page Table Entry Verification  
+        "ldr x28, [x19]\n"           // Read L0 table entry 0
+        "mov w27, #'L'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'0'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        // Output x28 (L0 entry) - low 32 bits
+        "and x29, x28, #0xFFFFFFFF\n" // Get low 32 bits  
+        "lsr x29, x29, #16\n"        // Show high 16 bits of low 32
+        "mov w30, #12\n"             // Shift counter for 4 hex digits
+        "12:\n"                      // Hex output loop
+        "lsr x1, x29, x30\n"         // Shift to get nibble (use x1 instead of x31)
+        "and x1, x1, #0xF\n"         // Mask to 4 bits
+        "cmp x1, #10\n"
+        "b.lt 13f\n"
+        "add x1, x1, #'A'-10\n"      // Convert A-F
+        "b 14f\n"
+        "13:\n"
+        "add x1, x1, #'0'\n"         // Convert 0-9
+        "14:\n"
+        "str w1, [x26]\n"            // Output hex digit
+        "subs w30, w30, #4\n"        // Next nibble
+        "b.ge 12b\n"                 // Loop for all 4 digits
+        
+        // DEBUG 3: Register Dump Before MMU Enable
+        "mrs x28, ttbr0_el1\n"       // Check TTBR0_EL1
+        "mov w27, #'T'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'0'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        // Output x28 (TTBR0_EL1) - show relevant part (low 32 bits, high 16)
+        "and x29, x28, #0xFFFFFFFF\n" // Get low 32 bits
+        "lsr x29, x29, #16\n"        // Show high 16 bits of low 32
+        "mov w30, #12\n"             // Shift counter for 4 hex digits
+        "15:\n"                      // Hex output loop
+        "lsr x2, x29, x30\n"         // Shift to get nibble (use x2 instead of x31)
+        "and x2, x2, #0xF\n"         // Mask to 4 bits
+        "cmp x2, #10\n"
+        "b.lt 16f\n"
+        "add x2, x2, #'A'-10\n"      // Convert A-F
+        "b 17f\n"
+        "16:\n"
+        "add x2, x2, #'0'\n"         // Convert 0-9
+        "17:\n"
+        "str w2, [x26]\n"            // Output hex digit
+        "subs w30, w30, #4\n"        // Next nibble
+        "b.ge 15b\n"                 // Loop for all 4 digits
+        
+        "mrs x28, ttbr1_el1\n"       // Check TTBR1_EL1  
+        "mov w27, #'T'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        // Output x28 (TTBR1_EL1) - show relevant part (low 32 bits, high 16)
+        "and x29, x28, #0xFFFFFFFF\n" // Get low 32 bits
+        "lsr x29, x29, #16\n"        // Show high 16 bits of low 32
+        "mov w30, #12\n"             // Shift counter for 4 hex digits
+        "18:\n"                      // Hex output loop
+        "lsr x3, x29, x30\n"         // Shift to get nibble (use x3 instead of x31)
+        "and x3, x3, #0xF\n"         // Mask to 4 bits
+        "cmp x3, #10\n"
+        "b.lt 19f\n"
+        "add x3, x3, #'A'-10\n"      // Convert A-F
+        "b 20f\n"
+        "19:\n"
+        "add x3, x3, #'0'\n"         // Convert 0-9
+        "20:\n"
+        "str w3, [x26]\n"            // Output hex digit
+        "subs w30, w30, #4\n"        // Next nibble
+        "b.ge 18b\n"                 // Loop for all 4 digits
+        
+        // DEBUG 4: Exception Vector Table Virtual Address Verification
+        "mov w27, #'E'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'V'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'T'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // Check if vector table has virtual mapping at expected address
+        "mov x28, #0x0000000001000000\n" // Expected virtual vector table address
+        "lsr x29, x28, #39\n"        // L0 index
+        "and x29, x29, #0x1FF\n"
+        "ldr x30, [x19, x29, lsl #3]\n" // Load L0 entry
+        "tst x30, #1\n"              // Check valid bit
+        "b.eq 21f\n"                 // Branch if invalid
+        
+        // Vector table mapping exists
+        "mov w27, #'O'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'K'\n"
+        "str w27, [x26]\n"
+        "b 22f\n"
+        
+        "21:\n"                      // Vector table not mapped
+        "mov w27, #'N'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'O'\n"
+        "str w27, [x26]\n"
+        
+        "22:\n"                      // Continue
+        
+        // DEBUG 5: Page Table Cache Maintenance Before MMU Enable
+        "mov w27, #'C'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'N'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // Clean page table base address from data cache
+        "dc cvac, x19\n"             // Clean page table base address
+        
+        // Clean L0 table entries (first few entries)
+        "mov x28, x19\n"             // Start with L0 table base
+        "mov x29, #8\n"              // Clean first 8 entries (64 bytes)
+        "23:\n"
+        "dc cvac, x28\n"             // Clean cache line
+        "add x28, x28, #64\n"        // Next cache line
+        "subs x29, x29, #1\n"        // Decrement counter
+        "b.ne 23b\n"                 // Continue cleaning
+        
+        // Data synchronization after cleaning
+        "dsb sy\n"                   // Wait for cache operations to complete
+        
+        "mov w27, #'O'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'K'\n"
+        "str w27, [x26]\n"
+        
+        // DEBUG 6: Exception-Safe MMU Enable Preparation
+        "mov w27, #'E'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'X'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'C'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // Verify exception level and prepare for potential exceptions
+        "mrs x28, currentel\n"       // Get current exception level
+        "lsr x28, x28, #2\n"         // Extract EL bits
+        "cmp x28, #1\n"              // Should be EL1
+        "b.ne 24f\n"                 // Branch if not EL1
+        
+        // Verify DAIF (exception mask) state
+        "mrs x28, daif\n"            // Get interrupt masks
+        "and x28, x28, #0xF\n"       // Mask to DAIF bits
+        
+        // Enable appropriate interrupts for MMU transition
+        "msr daifclr, #2\n"          // Enable IRQ (clear I bit)
+        "isb\n"                      // Ensure interrupt state change
+        
+        // Verify stack pointer alignment
+        "mov x28, sp\n"              // Get current stack pointer
+        "and x28, x28, #0xF\n"       // Check 16-byte alignment
+        "cbnz x28, 25f\n"            // Branch if not aligned
+        
+        "mov w27, #'O'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'K'\n"
+        "str w27, [x26]\n"
+        "b 26f\n"
+        
+        "24:\n"                      // Wrong exception level
+        "mov w27, #'E'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"
+        "str w27, [x26]\n"
+        "b 26f\n"
+        
+        "25:\n"                      // Stack misaligned
+        "mov w27, #'S'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'P'\n"
+        "str w27, [x26]\n"
+        
+        "26:\n"                      // Continue
+        
+        // STAGE 4: **MINIMAL MMU ENABLE TEST**
         "mov w27, #'4'\n"
         "str w27, [x26]\n"
-        "msr sctlr_el1, x23\n"       // ← Enable MMU (critical instruction)
         
-        // STAGE 5: Immediate post-MMU synchronization
+        // Save original SCTLR_EL1 and use minimal MMU enable
+        "mov x29, x23\n"             // Save original SCTLR value
+        "mrs x23, sctlr_el1\n"       // Read current SCTLR_EL1
+        "bic x23, x23, #0xFFFF\n"    // Clear all non-reserved bits
+        "orr x23, x23, #1\n"         // Set ONLY M bit (MMU enable)
+        
+        // PRE-MMU STATUS CHECK
+        "mov w27, #'S'\n"            // 'S' = About to enable MMU
+        "str w27, [x26]\n"
+        
+        "msr sctlr_el1, x23\n"       // ← MINIMAL MMU Enable (critical instruction)
+        
+        // POST-MMU STATUS CHECK  
+        "mov w27, #'M'\n"            // 'M' = MMU enable instruction completed
+        "str w27, [x26]\n"
+        
+        // DEBUG 6: Post-MMU Immediate Test
+        "nop\n"                      // Single pipeline bubble
+        "mov w27, #'I'\n"            // Immediate test - does this work?
+        "str w27, [x26]\n"           // If this fails, MMU enable faulted
+        
+        // ENHANCED POST-MMU INSTRUCTION PIPELINE SYNCHRONIZATION
+        // Critical: Force immediate instruction refetch in new virtual context
+        "isb\n"                      // IMMEDIATE: Force instruction pipeline flush
+        
+        // Pipeline bubbles to ensure clean instruction stream
+        "nop\n"                      // Pipeline bubble 1
+        "nop\n"                      // Pipeline bubble 2  
+        "nop\n"                      // Pipeline bubble 3
+        
+        // Data synchronization to ensure MMU enable has propagated
+        "dsb sy\n"                   // System-wide data synchronization barrier
+        
+        // Second instruction synchronization after data barrier
+        "isb\n"                      // Second instruction synchronization barrier
+        
+        // STAGE 5: Now safe to execute normal instructions
         "mov w27, #'5'\n"
         "str w27, [x26]\n"
-        "isb\n"                      // Critical: synchronize post-MMU instruction stream
         
-        // STAGE 6: Post-MMU data synchronization  
+        // STAGE 6: Additional post-MMU verification
         "mov w27, #'6'\n"
         "str w27, [x26]\n"
-        "dsb sy\n"                   // Ensure MMU enable has propagated
         
-        // STAGE 7: Final post-MMU instruction barrier
+        // STAGE 7: Final confirmation
         "mov w27, #'7'\n"
         "str w27, [x26]\n"
-        "isb\n"                      // Final instruction synchronization
         
         // DEBUG: After successful MMU enable sequence
         "mov w27, #'O'\n"
@@ -2814,7 +3064,7 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
           "r"(mair),                 // %2: MAIR_EL1 value  
           "r"(continuation_phys),    // %3: continuation point (physical)
           "r"(continuation_virt)     // %4: continuation point (virtual)
-        : "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "memory"
+        : "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "x0", "x1", "x2", "x3", "memory"
     );
     
     // We should never reach here
