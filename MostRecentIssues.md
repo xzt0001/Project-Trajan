@@ -1,5 +1,22 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
+June 21th 2025
+
+Current status: still debugging issues during MMU enablement, which currently on line 3081.
+
+Summary of major fixes since last update: 
+Canonical address and high virtual fixes, 
+UART attribute clean up, 
+UART MMIO mappings, 
+L0 page table mapping.
+
+Potential major root causes to investigate:
+1. Identity mapping gap Problem
+2. Page Table Coherency issues involving two TTBR tables.
+3. Incorrect SCTLR_EL1 manipulation (line 3073-3075 in vmm.c)
+
+Latest kernel log: https://docs.google.com/document/d/1eFv0iJ2kfNLMoQsiNg1mksoyKuIfnK7iKR_ab1NhAe8/edit?usp=sharing 
+
 June 18th 2025
 
 Current status: I'm debugging a critical issue during MMU enablement. The system halt as the  "msr sctlr_el1, x23\n" execute on line 2966 in vmm.c. I have ruled out a series potential errors, see debugging code from line 2734 up to 2964. At this point, I believe the probable root causes are most likely architectural violation that ARMv8 hardware caches and rejects, rather than a sutle mapping error.

@@ -29,6 +29,7 @@ typedef struct {
 // Global variables
 extern bool mmu_enabled;  // Use the one defined in uart_late.c
 static uint64_t* l0_table = NULL;
+static uint64_t* l0_table_ttbr1 = NULL;  // Separate page table for TTBR1_EL1
 // Make this variable accessible from other files
 uint64_t saved_vector_table_addr = 0; // Added to preserve vector table address
 
@@ -105,14 +106,14 @@ static inline void write_phys64(uint64_t phys_addr, uint64_t value) {
 // Combined flags for typical memory regions
 #define PTE_KERN_DATA   (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RW | PTE_NOEXEC)
 #define PTE_KERN_RODATA (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO | PTE_NOEXEC)
-#define PTE_KERN_TEXT   (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO)
+#define PTE_KERN_TEXT   (PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO)
 
 #define PTE_USER_DATA   (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RW_EL0 | PTE_NOEXEC)
 #define PTE_USER_RODATA (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO_EL0 | PTE_NOEXEC)
 #define PTE_USER_TEXT   (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO_EL0 | PTE_UXN)
 
 // Additional flag combinations for MMIO regions
-#define PTE_DEVICE      (PTE_VALID | PTE_AF | PTE_SH_OUTER | PTE_DEVICE_nGnRnE | PTE_AP_RW | PTE_NOEXEC)
+#define PTE_DEVICE      (PTE_VALID | PTE_AF | PTE_SH_OUTER | PTE_DEVICE_nGnRE | PTE_AP_RW | PTE_NOEXEC)
 
 // Debug UART for direct output even when system is unstable
 #define DEBUG_UART 0x09000000
@@ -521,8 +522,24 @@ void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end,
         uint64_t virt_addr = virt_start + (i * PAGE_SIZE);
         uint64_t phys_addr = phys_start + (i * PAGE_SIZE);
         
+        // Determine which page table to use based on virtual address
+        uint64_t* page_table_to_use;
+        if (virt_addr >= HIGH_VIRT_BASE) {
+            // High virtual address - use TTBR1 page table
+            page_table_to_use = l0_table_ttbr1;
+            uart_puts_early("[VMM] Using TTBR1 page table for high VA 0x");
+            uart_hex64_early(virt_addr);
+            uart_puts_early("\n");
+        } else {
+            // Low virtual address - use TTBR0 page table (passed parameter)
+            page_table_to_use = l0_table;
+            uart_puts_early("[VMM] Using TTBR0 page table for low VA 0x");
+            uart_hex64_early(virt_addr);
+            uart_puts_early("\n");
+        }
+        
         // Create/get L3 table for the virtual address
-        uint64_t* l3_table = get_l3_table_for_addr(l0_table, virt_addr);
+        uint64_t* l3_table = get_l3_table_for_addr(page_table_to_use, virt_addr);
         if (!l3_table) {
             uart_puts_early("[VMM] ERROR: Could not get L3 table for address 0x");
             uart_hex64_early(virt_addr);
@@ -1519,7 +1536,7 @@ void map_mmu_transition_code(void) {
     *uart = '\r'; *uart = '\n';
     
     // Declare variables needed for virtual mapping
-    uint64_t high_virt_base = 0xFFFF000000000000UL;
+    uint64_t high_virt_base = HIGH_VIRT_BASE;
     uint64_t virt_region_start = high_virt_base | region_start;
     uint64_t virt_region_end = high_virt_base | region_end;
     
@@ -1796,13 +1813,18 @@ uint64_t* get_kernel_page_table(void) {
     return l0_table;
 }
 
+// Return the TTBR1 L0 page table for high virtual addresses
+uint64_t* get_kernel_ttbr1_page_table(void) {
+    return l0_table_ttbr1;
+}
+
 // Continuation point for after MMU is enabled
 // Add special section attribute to ensure proper placement  
 void __attribute__((used, aligned(4096), section(".text.mmu_continuation")))
 mmu_continuation_point(void) {
     // IMMEDIATE confirmation we entered the function - use both physical and virtual UART
     volatile uint32_t* uart_phys = (volatile uint32_t*)0x09000000;
-    volatile uint32_t* uart_virt = (volatile uint32_t*)0xFFFF000009000000;
+    volatile uint32_t* uart_virt = (volatile uint32_t*)UART_VIRT;
     
     // First thing: confirm we entered the continuation point
     *uart_phys = 'C';
@@ -1903,15 +1925,30 @@ void map_uart(void) {
         return;
     }
     
-    // Create/get L3 table for the UART virtual address region
-    uint64_t* l3_table = get_l3_table_for_addr(l0_table, UART_VIRT);
+    // Select the correct L0 root table for the UART virtual address.
+    // High kernel addresses (>= HIGH_VIRT_BASE) must be placed in the
+    // TTBR1 tree; low addresses use TTBR0.  UART_VIRT is always high, but
+    // keep the check generic in case the constant changes.
+
+    uint64_t* root_for_virt = (UART_VIRT >= HIGH_VIRT_BASE) ? l0_table_ttbr1
+                                                            : l0_table;
+
+    // Create/get L3 table for the UART virtual address region using the
+    // selected root.
+    uint64_t* l3_table = get_l3_table_for_addr(root_for_virt, UART_VIRT);
     if (!l3_table) {
         uart_puts_early("[VMM] ERROR: Could not get L3 table for UART virtual address\n");
         return;
     }
     
     // Device memory attributes for UART MMIO - FIXED: Add all required flags
-    uint64_t uart_flags = PTE_VALID | PTE_AF | PTE_SH_OUTER | PTE_DEVICE_nGnRE | PTE_AP_RW;
+    uint64_t uart_flags = PTE_VALID | PTE_PAGE | PTE_AF |
+                          PTE_DEVICE_nGnRE | PTE_AP_RW |
+                          PTE_PXN | PTE_UXN;          // virtual
+    
+    // Make the UART virtual mapping non-executable to match the physical
+    // identity mapping and avoid attribute mismatches across descriptors.
+    uart_flags |= PTE_PXN | PTE_UXN;
     
     // Debug output before mapping
     uart_puts_early("[VMM] UART mapping: PA 0x");
@@ -1952,6 +1989,38 @@ void map_uart(void) {
     
     // Save the phys/virt addresses for diagnostic use
     register_mapping(UART_VIRT, UART_VIRT + 0x1000, UART_PHYS, uart_flags, "UART MMIO");
+
+    // NEW: also create an *identity* mapping for the UART MMIO page so
+    // that the very first physical UART access that occurs immediately
+    // after the M-bit is set will translate successfully.  We cannot use
+    // map_kernel_page() because its internals eventually call map_page(),
+    // and map_page() intentionally skips any VA or PA inside the UART
+    // range to avoid double-mapping.  Therefore we build the entry
+    // manually, mirroring the logic used a few lines above for the high
+    // virtual mapping, but this time with VA = PA.
+
+    uint64_t* l3_table_phys = get_l3_table_for_addr(l0_table, UART_PHYS);
+    if (l3_table_phys) {
+        uint64_t l3_idx_phys = (UART_PHYS >> 12) & 0x1FF;
+        uint64_t pte_phys = UART_PHYS |
+                           PTE_VALID | PTE_PAGE | PTE_AF |
+                           PTE_SH_NONE |       // Device memory must be non-shareable
+                           PTE_DEVICE_nGnRE |
+                           PTE_AP_RW |
+                           PTE_PXN | PTE_UXN;  // never executable
+
+        // Cache maintenance
+        asm volatile("dc civac, %0" :: "r"(&l3_table_phys[l3_idx_phys]) : "memory");
+        asm volatile("dsb ish" ::: "memory");
+
+        l3_table_phys[l3_idx_phys] = pte_phys;
+
+        asm volatile("dc civac, %0" :: "r"(&l3_table_phys[l3_idx_phys]) : "memory");
+        asm volatile("dsb ish" ::: "memory");
+
+        // Register for diagnostics
+        register_mapping(UART_PHYS, UART_PHYS + 0x1000, UART_PHYS, pte_phys, "UART MMIO (ID)");
+    }
 }
 
 // Function to verify UART mapping after MMU is enabled
@@ -2357,37 +2426,68 @@ void init_vmm_impl(void) {
     *uart = 'R';
     *uart = '\r';
     *uart = '\n';
+
+    // Map the two L0 page-table pages (0x40000000-0x40002000) so that
+    // subsequent page-table maintenance after the MMU is enabled will not
+    // fault when the kernel touches these virtual addresses.
+    map_range(l0_table,
+              0x40000000UL,       // virt_start (inclusive)
+              0x40002000UL,       // virt_end   (exclusive)
+              0x40000000UL,       // phys_start (identity)
+              PTE_KERN_DATA);
+
+    register_mapping(0x40000000UL, 0x40002000UL,
+                     0x40000000UL, PTE_KERN_DATA,
+                     "L0 tables (identity)");
 }
 
 // Initialize the page tables for the kernel
 uint64_t* init_page_tables(void) {
     uart_puts_early("[VMM] Initializing page tables\n");
     
-    // Allocate L0 table (512 entries, 4KB)
-    uint64_t* l0_table = (uint64_t*)alloc_page(); // Use alloc_page instead of pmm_alloc_page
-    if (!l0_table) {
-        uart_puts_early("[VMM] ERROR: Failed to allocate L0 page table\n");
+    // Allocate L0 table for TTBR0_EL1 (512 entries, 4KB)
+    uint64_t* l0_table_ttbr0 = (uint64_t*)alloc_page();
+    if (!l0_table_ttbr0) {
+        uart_puts_early("[VMM] ERROR: Failed to allocate TTBR0 L0 page table\n");
         return NULL;
     }
     
-    // Clear the table
-    for (int i = 0; i < 512; i++) {
-        l0_table[i] = 0;
+    // Allocate separate L0 table for TTBR1_EL1 (512 entries, 4KB)
+    l0_table_ttbr1 = (uint64_t*)alloc_page();
+    if (!l0_table_ttbr1) {
+        uart_puts_early("[VMM] ERROR: Failed to allocate TTBR1 L0 page table\n");
+        return NULL;
     }
     
-    // Cache maintenance for the L0 table
-    for (uintptr_t addr = (uintptr_t)l0_table; 
-         addr < (uintptr_t)l0_table + 4096; 
+    // Clear both tables
+    for (int i = 0; i < 512; i++) {
+        l0_table_ttbr0[i] = 0;
+        l0_table_ttbr1[i] = 0;
+    }
+    
+    // Cache maintenance for the TTBR0 L0 table
+    for (uintptr_t addr = (uintptr_t)l0_table_ttbr0; 
+         addr < (uintptr_t)l0_table_ttbr0 + 4096; 
+         addr += 64) {
+        asm volatile("dc civac, %0" :: "r"(addr) : "memory");
+    }
+    
+    // Cache maintenance for the TTBR1 L0 table
+    for (uintptr_t addr = (uintptr_t)l0_table_ttbr1; 
+         addr < (uintptr_t)l0_table_ttbr1 + 4096; 
          addr += 64) {
         asm volatile("dc civac, %0" :: "r"(addr) : "memory");
     }
     asm volatile("dsb ish" ::: "memory");
     
-    uart_puts_early("[VMM] L0 table created at 0x");
-    uart_hex64_early((uint64_t)l0_table);
+    uart_puts_early("[VMM] TTBR0 L0 table created at 0x");
+    uart_hex64_early((uint64_t)l0_table_ttbr0);
+    uart_puts_early("\n");
+    uart_puts_early("[VMM] TTBR1 L0 table created at 0x");
+    uart_hex64_early((uint64_t)l0_table_ttbr1);
     uart_puts_early("\n");
     
-    return l0_table;
+    return l0_table_ttbr0;
 }
 
 // Map the kernel sections (.text, .rodata, .data, etc.)
@@ -2474,17 +2574,22 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     // Enhanced cache maintenance
     enhanced_cache_maintenance();
     
-    // Save the physical address of the page table base
-    uint64_t page_table_phys = (uint64_t)page_table_base;
+    // Save the physical addresses of both page table bases
+    uint64_t page_table_phys_ttbr0 = (uint64_t)page_table_base;
+    uint64_t page_table_phys_ttbr1 = (uint64_t)l0_table_ttbr1;
     
-    // CRITICAL: Verify page table base alignment
+    // CRITICAL: Verify page table base alignment for both tables
     *uart = 'A'; *uart = 'L'; *uart = 'I'; *uart = 'G'; *uart = 'N'; *uart = ':';
-    uart_hex64_early(page_table_phys);
+    uart_hex64_early(page_table_phys_ttbr0);
     *uart = '/';
-    uart_hex64_early(page_table_phys & 0xFFF);
+    uart_hex64_early(page_table_phys_ttbr0 & 0xFFF);
+    *uart = '|';
+    uart_hex64_early(page_table_phys_ttbr1);
+    *uart = '/';
+    uart_hex64_early(page_table_phys_ttbr1 & 0xFFF);
     *uart = '\r'; *uart = '\n';
     
-    if (page_table_phys & 0xFFF) {
+    if ((page_table_phys_ttbr0 & 0xFFF) || (page_table_phys_ttbr1 & 0xFFF)) {
         *uart = 'E'; *uart = 'R'; *uart = 'R'; *uart = ':'; *uart = 'A'; *uart = 'L'; *uart = 'I'; *uart = 'G'; *uart = 'N';
         *uart = '\r'; *uart = '\n';
         return;
@@ -2498,15 +2603,24 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     uart_hex64_early(vbar_el1_addr);
     *uart = '\r'; *uart = '\n';
     
+    // Debug: Show separate page table addresses
+    *uart = 'T'; *uart = 'T'; *uart = 'B'; *uart = 'R'; *uart = '0'; *uart = ':';
+    uart_hex64_early(page_table_phys_ttbr0);
+    *uart = '\r'; *uart = '\n';
+    *uart = 'T'; *uart = 'T'; *uart = 'B'; *uart = 'R'; *uart = '1'; *uart = ':';
+    uart_hex64_early(page_table_phys_ttbr1);
+    *uart = '\r'; *uart = '\n';
+    
     // **CRITICAL FIX 1: Complete TCR_EL1 Configuration**
     // Set up comprehensive TCR_EL1 (Translation Control Register)
     uint64_t tcr = 0;
     
-    // T0SZ[5:0] = 25 (64-25=39-bit VA space for TTBR0_EL1)
-    tcr |= (25ULL << 0);
+    // VA size: selectable via VA_BITS_48 (see uart.h)
+    //   48-bit VA → TCR_T0SZ/T1SZ = 16
+    //   39-bit VA → 25
+    tcr |= ((uint64_t)TCR_T0SZ << 0);
     
-    // T1SZ[21:16] = 25 (64-25=39-bit VA space for TTBR1_EL1) 
-    tcr |= (25ULL << 16);
+    tcr |= ((uint64_t)TCR_T1SZ << 16);
     
     // TG0[15:14] = 0 (4KB granule for TTBR0_EL1)
     tcr |= (0ULL << 14);
@@ -2632,7 +2746,7 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     
     // STEP 2: Enhanced MMU enable sequence with fallback branch strategy
     // Calculate both physical and virtual continuation addresses
-    uint64_t high_virt_base = 0xFFFF000000000000UL;
+    uint64_t high_virt_base = HIGH_VIRT_BASE;
     uint64_t continuation_virt = high_virt_base | continuation_phys;
     
     *uart = 'S'; *uart = 'T'; *uart = 'E'; *uart = 'P'; *uart = '2'; *uart = ':';
@@ -2648,13 +2762,14 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     *uart = 'A'; *uart = 'S'; *uart = 'M'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
     *uart = '\r'; *uart = '\n';
     
-    asm volatile (
+            asm volatile (
         // Save critical values
-        "mov x19, %0\n"              // x19 = page_table_base
-        "mov x20, %1\n"              // x20 = tcr value
-        "mov x21, %2\n"              // x21 = mair value  
-        "mov x22, %3\n"              // x22 = continuation_phys
-        "mov x24, %4\n"              // x24 = continuation_virt
+        "mov x19, %0\n"              // x19 = page_table_base_ttbr0
+        "mov x18, %1\n"              // x18 = page_table_base_ttbr1
+        "mov x20, %2\n"              // x20 = tcr value
+        "mov x21, %3\n"              // x21 = mair value  
+        "mov x22, %4\n"              // x22 = continuation_phys
+        "mov x24, %5\n"              // x24 = continuation_virt
         
         // Emergency debug: Output "PHYS:" + current EL level
         "mrs x25, currentel\n"       // Get current exception level
@@ -2685,9 +2800,9 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "msr tcr_el1, x20\n"         // Set complete TCR_EL1
         "isb\n"
         
-        // Set translation table base
-        "msr ttbr0_el1, x19\n"       // Set page table base
-        "msr ttbr1_el1, x19\n"       // Set TTBR1_EL1 to same page table (instead of xzr)
+        // Set translation table bases - separate page tables for TTBR0 and TTBR1
+        "msr ttbr0_el1, x19\n"       // Set TTBR0_EL1 to page table for low addresses
+        "msr ttbr1_el1, x18\n"       // Set TTBR1_EL1 to separate page table for high addresses
         "isb\n"
         
         // Cache and TLB maintenance
@@ -2785,7 +2900,7 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "subs w30, w30, #4\n"        // Next nibble
         "b.ge 12b\n"                 // Loop for all 4 digits
         
-        // DEBUG 3: Register Dump Before MMU Enable
+        // DEBUG 3: Register Dump - Verify separate TTBR values after setting
         "mrs x28, ttbr0_el1\n"       // Check TTBR0_EL1
         "mov w27, #'T'\n"
         "str w27, [x26]\n"
@@ -2811,7 +2926,7 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "subs w30, w30, #4\n"        // Next nibble
         "b.ge 15b\n"                 // Loop for all 4 digits
         
-        "mrs x28, ttbr1_el1\n"       // Check TTBR1_EL1  
+        "mrs x28, ttbr1_el1\n"       // Check TTBR1_EL1 - should be different from TTBR0
         "mov w27, #'T'\n"
         "str w27, [x26]\n"
         "mov w27, #'1'\n"
@@ -3059,12 +3174,13 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "b 3b\n"                     // Infinite loop
         
         : // No outputs
-        : "r"(page_table_phys),      // %0: page table base
-          "r"(tcr),                  // %1: TCR_EL1 value
-          "r"(mair),                 // %2: MAIR_EL1 value  
-          "r"(continuation_phys),    // %3: continuation point (physical)
-          "r"(continuation_virt)     // %4: continuation point (virtual)
-        : "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "x0", "x1", "x2", "x3", "memory"
+        : "r"(page_table_phys_ttbr0), // %0: page table base for TTBR0_EL1
+          "r"(page_table_phys_ttbr1), // %1: page table base for TTBR1_EL1
+          "r"(tcr),                  // %2: TCR_EL1 value
+          "r"(mair),                 // %3: MAIR_EL1 value  
+          "r"(continuation_phys),    // %4: continuation point (physical)
+          "r"(continuation_virt)     // %5: continuation point (virtual)
+        : "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "x0", "x1", "x2", "x3", "memory"
     );
     
     // We should never reach here
@@ -3131,10 +3247,10 @@ void verify_critical_mappings_before_mmu(uint64_t* page_table_base) {
     extern void mmu_continuation_point(void);
     uint64_t continuation_addr = (uint64_t)&mmu_continuation_point;
     uint64_t uart_phys = 0x09000000;
-    uint64_t uart_virt = 0xFFFF000009000000;
+    uint64_t uart_virt = UART_VIRT;
     uint64_t vector_table_addr = read_vbar_el1();
     
-    uint64_t high_virt_base = 0xFFFF000000000000UL;
+    uint64_t high_virt_base = HIGH_VIRT_BASE;
     uint64_t continuation_virt = high_virt_base | continuation_addr;
     
     *uart = 'A'; *uart = 'D'; *uart = 'D'; *uart = 'R'; *uart = ':';
@@ -3179,8 +3295,15 @@ void verify_critical_mappings_before_mmu(uint64_t* page_table_base) {
         
         *uart = 'I'; *uart = '0' + i; *uart = ':';
         
-        // Get L3 table for this address
-        uint64_t* l3_table = get_l3_table_for_addr(page_table_base, addr);
+        // Select the appropriate root page-table: TTBR1 is used for
+        // high kernel virtual addresses (>= HIGH_VIRT_BASE), TTBR0 for
+        // everything else.  This mirrors the logic in map_range().
+
+        uint64_t* root_l0 = (addr >= HIGH_VIRT_BASE) ? l0_table_ttbr1
+                                                      : page_table_base;
+
+        // Get L3 table for this address using the chosen root table
+        uint64_t* l3_table = get_l3_table_for_addr(root_l0, addr);
         if (!l3_table) {
             *uart = 'N'; *uart = 'O'; *uart = 'L'; *uart = '3';
             *uart = '\r'; *uart = '\n';
@@ -3194,7 +3317,9 @@ void verify_critical_mappings_before_mmu(uint64_t* page_table_base) {
         if (!(pte & PTE_VALID)) {
             *uart = 'N'; *uart = 'O'; *uart = 'M'; *uart = 'A'; *uart = 'P';
             *uart = '\r'; *uart = '\n';
-            continue;
+            // NEW: treat missing critical mapping as fatal – stay here so
+            // the developer sees the problem instantly.
+            while (1) { /* PANIC: critical mapping missing */ }
         }
         
         // Check and fix executable permissions
