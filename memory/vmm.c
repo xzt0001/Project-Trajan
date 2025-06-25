@@ -2696,41 +2696,24 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     *uart = '\r'; *uart = '\n';
     
     // **CRITICAL FIX 2: Identity Map Current Execution Context**
-    // DEBUG: Before PC detection
+    // DEBUG: Before PC detection (keep for debugging)
     *uart = 'P'; *uart = 'C'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
     *uart = '\r'; *uart = '\n';
     
-    // Get the current PC location and ensure it's identity mapped
-    uint64_t current_pc;
-    asm volatile("adr %0, ." : "=r"(current_pc));
+    // Get the current PC location for debugging purposes only
+    uint64_t debug_pc;
+    asm volatile("adr %0, ." : "=r"(debug_pc));
     
     // DEBUG: After PC detection
     *uart = 'P'; *uart = 'C'; *uart = ':'; *uart = 'O'; *uart = 'K';
     *uart = '\r'; *uart = '\n';
     
     *uart = 'P'; *uart = 'C'; *uart = ':';
-    uart_hex64_early(current_pc);
+    uart_hex64_early(debug_pc);
     *uart = '\r'; *uart = '\n';
     
-    // Ensure the current execution region is identity mapped (4KB page around current PC)
-    uint64_t pc_page_start = current_pc & ~0xFFF;
-    uint64_t pc_page_end = pc_page_start + 0x2000; // Map 2 pages for safety
-    
-    *uart = 'R'; *uart = 'E'; *uart = 'G'; *uart = ':';
-    uart_hex64_early(pc_page_start);
-    *uart = '-';
-    uart_hex64_early(pc_page_end);
-    *uart = '\r'; *uart = '\n';
-    
-    // DEBUG: Before identity mapping
-    *uart = 'M'; *uart = 'A'; *uart = 'P'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
-    *uart = '\r'; *uart = '\n';
-    
-    // Create identity mapping for current execution region
-    map_range(page_table_base, pc_page_start, pc_page_end, pc_page_start, PTE_KERN_TEXT);
-    
-    // DEBUG: After identity mapping
-    *uart = 'M'; *uart = 'A'; *uart = 'P'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    // Note: Critical PC detection and mapping now happens inside assembly block
+    *uart = 'P'; *uart = 'C'; *uart = ':'; *uart = 'M'; *uart = 'O'; *uart = 'V'; *uart = 'E'; *uart = 'D';
     *uart = '\r'; *uart = '\n';
     
     // Simple MMU Enable Sequence with proper TCR_EL1 setup
@@ -2762,7 +2745,36 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     *uart = 'A'; *uart = 'S'; *uart = 'M'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
     *uart = '\r'; *uart = '\n';
     
-            asm volatile (
+    // CRITICAL: Create identity mapping for the assembly block
+    // Get the approximate address of the assembly block
+    uint64_t assembly_block_pc;
+    asm volatile("adr %0, assembly_start" : "=r"(assembly_block_pc));
+    
+    // Calculate mapping range - map generous region around assembly block
+    uint64_t assembly_page_start = assembly_block_pc & ~0xFFF;           // Round down to page boundary
+    uint64_t assembly_page_end = assembly_page_start + 0x4000;           // Map 16KB (4 pages) to be safe
+    
+    *uart = 'A'; *uart = 'P'; *uart = 'C'; *uart = ':';
+    uart_hex64_early(assembly_block_pc);
+    *uart = '\r'; *uart = '\n';
+    
+    *uart = 'A'; *uart = 'R'; *uart = 'G'; *uart = ':';
+    uart_hex64_early(assembly_page_start);
+    *uart = '-';
+    uart_hex64_early(assembly_page_end);
+    *uart = '\r'; *uart = '\n';
+    
+    // Create the identity mapping for assembly execution
+    *uart = 'A'; *uart = 'M'; *uart = 'A'; *uart = 'P'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
+    *uart = '\r'; *uart = '\n';
+    
+    map_range(page_table_base, assembly_page_start, assembly_page_end, assembly_page_start, PTE_KERN_TEXT);
+    
+    *uart = 'A'; *uart = 'M'; *uart = 'A'; *uart = 'P'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    asm volatile (
+        "assembly_start:\n"           // Label for PC detection
         // Save critical values
         "mov x19, %0\n"              // x19 = page_table_base_ttbr0
         "mov x18, %1\n"              // x18 = page_table_base_ttbr1
@@ -2805,17 +2817,139 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "msr ttbr1_el1, x18\n"       // Set TTBR1_EL1 to separate page table for high addresses
         "isb\n"
         
-        // Cache and TLB maintenance
+        // PHASE 1: COMPREHENSIVE CACHE FLUSH FOR PAGE TABLE COHERENCY
+        "mov w27, #'P'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"
+        "str w27, [x26]\n"
+        
+        // Step 1: Flush all data cache to ensure page table writes reach RAM
         "dsb sy\n"                   // Data synchronization barrier
-        "ic iallu\n"                 // Invalidate instruction cache
-        "dsb sy\n"
-        "tlbi vmalle1is\n"           // Invalidate TLB
-        "dsb ish\n"
-        "isb\n"
+        "mov x0, #0\n"               // Start of cache sweep
+        "dc cisw, x0\n"              // Clean & invalidate data cache by set/way
+        "add x0, x0, #64\n"          // Next cache line (64-byte line size)
+        "cmp x0, #0x8000\n"          // Cover reasonable cache size (32KB)
+        "b.lt .-8\n"                 // Loop back
+        "dsb sy\n"                   // Wait for cache operations
+        
+        // Step 2: Specific flush for page table regions
+        "mov x0, %0\n"               // TTBR0 table address
+        "dc cvac, x0\n"              // Clean by virtual address (TTBR0 L0 table)
+        "add x0, x0, #64\n"
+        "dc cvac, x0\n"              // Clean next cache line
+        "add x0, x0, #64\n"
+        "dc cvac, x0\n"              // Clean third cache line
+        "add x0, x0, #64\n"
+        "dc cvac, x0\n"              // Clean fourth cache line (cover full page)
+        
+        "mov x0, %1\n"               // TTBR1 table address  
+        "dc cvac, x0\n"              // Clean by virtual address (TTBR1 L0 table)
+        "add x0, x0, #64\n"
+        "dc cvac, x0\n"              // Clean next cache line
+        "add x0, x0, #64\n"
+        "dc cvac, x0\n"              // Clean third cache line
+        "add x0, x0, #64\n"
+        "dc cvac, x0\n"              // Clean fourth cache line
+        
+        "dsb sy\n"                   // Wait for all cache operations
+        
+        // PHASE 2: COMPREHENSIVE TLB INVALIDATION
+        "mov w27, #'P'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'2'\n"
+        "str w27, [x26]\n"
+        
+        // Step 1: Invalidate all TLB entries for both address spaces
+        "tlbi vmalle1\n"             // Invalidate all stage 1 TLB entries (local)
+        "dsb nsh\n"                  // Data synchronization barrier (non-shareable)
+        "tlbi vmalle1is\n"           // Invalidate all stage 1 TLB entries (inner shareable)
+        "dsb ish\n"                  // Data synchronization barrier (inner shareable)
+        
+        // Step 2: Invalidate instruction cache to prevent stale instruction fetches
+        "ic iallu\n"                 // Invalidate instruction cache (all)
+        "dsb sy\n"                   // Wait for instruction cache invalidation
+        "isb\n"                      // Instruction synchronization barrier
         
         // Enable MMU - CONSERVATIVE APPROACH WITH MULTI-STAGE BARRIERS
-        "mrs x23, sctlr_el1\n"       // Read SCTLR_EL1
-        "orr x23, x23, #1\n"         // Set M bit
+        
+        // CRITICAL: Get PC right before MMU enable and ensure mapping
+        "adr x28, mmu_enable_point\n"     // Get address of MMU enable instruction
+        "and x29, x28, %[page_mask]\n"    // Round down to page boundary
+        "add x30, x29, #0x2000\n"         // Add 8KB (2 pages) for safety
+        
+        // Debug: Show critical PC location
+        "mov w27, #'C'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'P'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'C'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // Output critical PC in hex (simplified - just show low 16 bits)
+        "and x0, x28, #0xFFFF\n"          // Get low 16 bits
+        "lsr x1, x0, #12\n"               // Get high nibble
+        "and x1, x1, #0xF\n"
+        "cmp x1, #10\n"
+        "b.lt 1f\n"
+        "add x1, x1, #'A'-10\n"
+        "b 2f\n"
+        "1: add x1, x1, #'0'\n"
+        "2: str w1, [x26]\n"
+        
+        "lsr x1, x0, #8\n"                // Next nibble
+        "and x1, x1, #0xF\n"
+        "cmp x1, #10\n"
+        "b.lt 3f\n"
+        "add x1, x1, #'A'-10\n"
+        "b 4f\n"
+        "3: add x1, x1, #'0'\n"
+        "4: str w1, [x26]\n"
+        
+        "lsr x1, x0, #4\n"                // Next nibble
+        "and x1, x1, #0xF\n"
+        "cmp x1, #10\n"
+        "b.lt 5f\n"
+        "add x1, x1, #'A'-10\n"
+        "b 6f\n"
+        "5: add x1, x1, #'0'\n"
+        "6: str w1, [x26]\n"
+        
+        "and x1, x0, #0xF\n"              // Last nibble
+        "cmp x1, #10\n"
+        "b.lt 7f\n"
+        "add x1, x1, #'A'-10\n"
+        "b 8f\n"
+        "7: add x1, x1, #'0'\n"
+        "8: str w1, [x26]\n"
+        
+        "mov w27, #'\\r'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'\\n'\n"
+        "str w27, [x26]\n"
+        
+        // FINAL PHASE: CRITICAL SYNCHRONIZATION BEFORE MMU ENABLE
+        "mov w27, #'F'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'I'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'N'\n"
+        "str w27, [x26]\n"
+        
+        // Final memory barrier sequence to ensure cache/TLB operations complete
+        "dsb sy\n"                   // Data synchronization barrier (system-wide)
+        "isb\n"                      // Instruction synchronization barrier
+        
+        // Ensure all page table updates are visible to MMU hardware
+        "dmb sy\n"                   // Data memory barrier (system-wide)
+        "dsb sy\n"                   // Data synchronization barrier (system-wide)
+        "isb\n"                      // Instruction synchronization barrier
+        
+        // Now we're at the critical point - MMU enable happens here
+        "mmu_enable_point:\n"
+        "mrs x23, sctlr_el1\n"       // Read SCTLR_EL1 
+        "orr x23, x23, #1\n"         // Set ONLY M bit (preserve cache bits)
         
         // DEBUG: Before MMU enable sequence
         "mov w27, #'M'\n"
@@ -3068,11 +3202,10 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #'4'\n"
         "str w27, [x26]\n"
         
-        // Save original SCTLR_EL1 and use minimal MMU enable
-        "mov x29, x23\n"             // Save original SCTLR value
-        "mrs x23, sctlr_el1\n"       // Read current SCTLR_EL1
-        "bic x23, x23, #0xFFFF\n"    // Clear all non-reserved bits
-        "orr x23, x23, #1\n"         // Set ONLY M bit (MMU enable)
+        // FIXED: Preserve cache bits in SCTLR_EL1 (don't clear them!)
+        "mov x29, x23\n"             // Save current SCTLR value
+        // NOTE: x23 already contains the SCTLR value with M bit set from above
+        // No need to clear cache bits - just use the value we already prepared
         
         // PRE-MMU STATUS CHECK
         "mov w27, #'S'\n"            // 'S' = About to enable MMU
@@ -3179,7 +3312,8 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
           "r"(tcr),                  // %2: TCR_EL1 value
           "r"(mair),                 // %3: MAIR_EL1 value  
           "r"(continuation_phys),    // %4: continuation point (physical)
-          "r"(continuation_virt)     // %5: continuation point (virtual)
+          "r"(continuation_virt),    // %5: continuation point (virtual)
+          [page_mask] "r"(~0xFFFUL)  // %6: page mask for alignment
         : "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "x0", "x1", "x2", "x3", "memory"
     );
     

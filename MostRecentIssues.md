@@ -1,5 +1,19 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
+Some thoughts:
+
+June 24th 2025
+
+Current Status, still hanging at MMU enablement on line 3214.
+
+Summary of major fixes since last update:
+- Addressed the identity mapping gap problem for the assembly block
+- Conducted a cache flush for page table coherency issue
+
+Problem that might cause the hang: see lines 2828-2832 in vmm.c, this brute force loop is overkill and might accidentally cleaned/invalidated data cache.
+
+Latest kernel log: https://docs.google.com/document/d/1Kfx7aKpJ1KYf1kqv4Sp5kyj2wPTBvAJTLmVy7pv_Wl8/edit?usp=sharing
+
 June 21th 2025
 
 Current status: still debugging issues during MMU enablement, which currently on line 3081.
