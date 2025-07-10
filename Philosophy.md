@@ -2,9 +2,9 @@
 
 
 
-This project—CustomOS—emerges from my long-standing study of history, political systems, and regime change. For years, I have studied the collapse of empires and regimes, the transitions of power throughout Chinese dynasties, and the evolution of both Eastern and Western political institutions. From the dynastic cycles of imperial China to the collapse of the Soviet Union, I’ve always sought to understand how systems failed, not suddenly, but ritually.
+This project emerges from my long-standing study of history, political systems, and regime change. For years, I have studied the collapse of empires and regimes, the transitions of power throughout Chinese dynasties, and the evolution of both Eastern and Western political institutions. From the dynastic cycles of imperial China, especially the end of Yuan and Ming dynasty, to the collapse of the Soviet Union, I’ve always sought to understand how systems failed, not suddenly, but ritually.
 
-The four television series that most precisely reflect this lifelong study—and ultimately inspired this project—are: Yes Minister, House of Cards (BBC), The Crown, and Ming Dynasty 1566. Each dramatizes a core insight: that decay is often hidden beneath performance, and that institutions can persist, even thrive in form, while their substance disintegrates.
+The four television series that most precisely reflect this lifelong study—and ultimately inspired this project—are: Yes Minister/Yes Prime Minister, House of Cards (BBC), The Crown, and 大明王朝1566(Ming Dynasty 1566). Each dramatizes a core insight: that decay is often hidden beneath performance, and that institutions can persist, even thrive in form, while their substance disintegrates.
 
 It is political truth that ceremony endures long after sovereignty has eroded.
 
@@ -19,7 +19,7 @@ What if it logs everything… but only the curated version?
 What if init starts every process… but under foreign control?
 What if the page tables are correct… and corrupted?
 
-CustomOS is built to simulate exactly that world: a sovereign operating system that obeys all formal specifications while being inwardly subverted. The result is not dysfunction—it is ceremonial obedience masking structural compromise. That is the real danger.
+Project 500 is built to simulate exactly that world: a sovereign operating system that obeys all formal specifications while being inwardly subverted. The result is not dysfunction—it is ceremonial obedience masking structural compromise. That is the real danger.
 
 This project proposes a new class of system simulation: one that models what happens when the kernel is no longer sovereign, but still functional. It turns “trust boundaries” into a philosophical question. It challenges the idea that correctness is security. It teaches a harder truth: that some failures wear a mask of health.
 

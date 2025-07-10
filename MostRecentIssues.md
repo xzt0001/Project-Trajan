@@ -1,6 +1,18 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
-Some thoughts:
+July 9th 2025
+
+It appears the problem now is the mmu enable instruction itself.
+
+Possible Root Causes:
+QEMU MMU emulation bug - The msr sctlr_el1 instruction with M bit hangs
+Page table walker failure - Hardware can't access page tables
+Physical memory alignment issue - Page tables not properly aligned
+Cache coherency deadlock - MMU enable triggers cache coherency issue
+
+At this point I'm considering a temporary MMU bypass, this would allow continued development while investigating the root cause.
+
+Latest kernel log: https://docs.google.com/document/d/1qwpcVBwSc3F_KNT4loUSGIxl3UQ8Twg6rhktmqaXZ7w/edit?usp=sharing
 
 June 24th 2025
 

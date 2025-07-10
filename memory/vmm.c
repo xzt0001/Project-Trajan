@@ -2823,14 +2823,14 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #'1'\n"
         "str w27, [x26]\n"
         
-        // Step 1: Flush all data cache to ensure page table writes reach RAM
+        /*// Step 1: Flush all data cache to ensure page table writes reach RAM
         "dsb sy\n"                   // Data synchronization barrier
         "mov x0, #0\n"               // Start of cache sweep
         "dc cisw, x0\n"              // Clean & invalidate data cache by set/way
         "add x0, x0, #64\n"          // Next cache line (64-byte line size)
         "cmp x0, #0x8000\n"          // Cover reasonable cache size (32KB)
         "b.lt .-8\n"                 // Loop back
-        "dsb sy\n"                   // Wait for cache operations
+        "dsb sy\n"                   // Wait for cache operations*/
         
         // Step 2: Specific flush for page table regions
         "mov x0, %0\n"               // TTBR0 table address
@@ -2948,8 +2948,77 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         
         // Now we're at the critical point - MMU enable happens here
         "mmu_enable_point:\n"
-        "mrs x23, sctlr_el1\n"       // Read SCTLR_EL1 
-        "orr x23, x23, #1\n"         // Set ONLY M bit (preserve cache bits)
+        
+        // DEBUG: Show what firmware gave us
+        "mrs x23, sctlr_el1\n"       // Read current SCTLR_EL1
+        "mov w27, #'F'\n"            // 'F' = Firmware SCTLR
+        "str w27, [x26]\n"
+        "mov w27, #'W'\n" 
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        // Output firmware SCTLR value (simplified hex output)
+        "and x29, x23, #0xFFFF\n"    // Get low 16 bits
+        "lsr x29, x29, #12\n"        // Show bits 12-15 (I,Z,C,A bits)
+        "and x29, x29, #0xF\n"       // Just 4 bits
+        "cmp x29, #10\n"
+        "b.lt 50f\n"
+        "add x29, x29, #'A'-10\n"
+        "b 51f\n"
+        "50:\n"
+        "add x29, x29, #'0'\n"
+        "51:\n"
+        "str w29, [x26]\n"
+        
+        // CLEAR problematic cache bits
+        "mov w27, #'C'\n"            // 'C' = Clearing
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'R'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // COMPLETELY REPLACE with known-good value
+        "mov x23, #0x0800\n"         // Base SCTLR value (essential bits)
+        "movk x23, #0x30D0, lsl #16\n" // Upper bits for known-good config
+        
+        // SET cache configuration that matches our MAIR
+        "mov w27, #'S'\n"            // 'S' = Setting  
+        "str w27, [x26]\n"
+        "mov w27, #'E'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'T'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        "orr x23, x23, #0x1000\n"    // Set I(12) - instruction cache
+        "orr x23, x23, #0x4\n"       // Set C(2) - data cache
+        "orr x23, x23, #0x1\n"       // Set M(0) - MMU enable
+        
+        // DEBUG: Show our final SCTLR value
+        "mov w27, #'F'\n"            // 'F' = Final SCTLR
+        "str w27, [x26]\n"
+        "mov w27, #'I'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'N'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        // Output our SCTLR value (simplified hex output)
+        "and x29, x23, #0xFFFF\n"    // Get low 16 bits
+        "lsr x29, x29, #12\n"        // Show bits 12-15 (I,Z,C,A bits)
+        "and x29, x29, #0xF\n"       // Just 4 bits
+        "cmp x29, #10\n"
+        "b.lt 52f\n"
+        "add x29, x29, #'A'-10\n"
+        "b 53f\n"
+        "52:\n"
+        "add x29, x29, #'0'\n"
+        "53:\n"
+        "str w29, [x26]\n"
         
         // DEBUG: Before MMU enable sequence
         "mov w27, #'M'\n"
@@ -3168,10 +3237,6 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mrs x28, daif\n"            // Get interrupt masks
         "and x28, x28, #0xF\n"       // Mask to DAIF bits
         
-        // Enable appropriate interrupts for MMU transition
-        "msr daifclr, #2\n"          // Enable IRQ (clear I bit)
-        "isb\n"                      // Ensure interrupt state change
-        
         // Verify stack pointer alignment
         "mov x28, sp\n"              // Get current stack pointer
         "and x28, x28, #0xF\n"       // Check 16-byte alignment
@@ -3210,12 +3275,115 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         // PRE-MMU STATUS CHECK
         "mov w27, #'S'\n"            // 'S' = About to enable MMU
         "str w27, [x26]\n"
+
+        // DEBUG: Show SCTLR value we're about to write
+        "mov w27, #'V'\n"            // 'V' = Value
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        // Output x23 value (SCTLR) - show low 16 bits
+        "and x29, x23, #0xFFFF\n"    
+        "lsr x29, x29, #12\n"        // Show high 4 bits of low 16
+        "and x29, x29, #0xF\n"       
+        "cmp x29, #10\n"
+        "b.lt 60f\n"
+        "add x29, x29, #'A'-10\n"
+        "b 61f\n"
+        "60:\n"
+        "add x29, x29, #'0'\n"
+        "61:\n"
+        "str w29, [x26]\n"
         
-        "msr sctlr_el1, x23\n"       // ← MINIMAL MMU Enable (critical instruction)
+        // STEP 1B: Test with minimal SCTLR (just MMU bit)
+        "mov w27, #'T'\n"            // 'T' = Test minimal
+        "str w27, [x26]\n"
+        "mov x24, #0x1\n"            // Just MMU enable, no cache bits
+        "msr sctlr_el1, x24\n"       // Try minimal MMU enable
+        "mov w27, #'1'\n"            // '1' = Minimal test completed
+        "str w27, [x26]\n"
+        
+        // STEP 3A: Verify page table integrity right before MMU
+        "ldr x28, [x19]\n"           // Read first L0 entry
+        "tst x28, #1\n"              // Check valid bit
+        "b.eq page_table_corrupt\n"
+        
+        // Verify TTBR0 points to our L0 table
+        "mrs x28, ttbr0_el1\n"
+        "cmp x28, x19\n"
+        "b.ne ttbr_mismatch\n"
+        
+        "msr sctlr_el1, x23\n"       // Try MMU enable
+        
+        "page_table_corrupt:\n"
+        "mov w27, #'P'\n"            // P = Page table corrupt
+        "str w27, [x26]\n"
+        "b hang\n"
+        
+        "ttbr_mismatch:\n"
+        "mov w27, #'T'\n"            // T = TTBR mismatch
+        "str w27, [x26]\n"
+        
+        "hang:\n"
+        "b hang\n"
+        
+        // STEP 4B: Exception level verification
+        "mrs x28, currentel\n"       // Get current EL
+        "lsr x28, x28, #2\n"         // Extract EL bits
+        "cmp x28, #1\n"              // Must be EL1
+        "b.ne wrong_el\n"
+        
+        "msr sctlr_el1, x23\n"       // Try MMU enable
+        
+        "wrong_el:\n"
+        "mov w27, #'E'\n"            // E = Wrong exception level
+        "str w27, [x26]\n"
+        
+        // STEP 4A: QEMU-specific MMU enable synchronization
+        "dsb sy\n"                   // Full system barrier
+        "isb\n"                      // Instruction synchronization
+        
+        // STEP 2A: Incremental MMU Enable (PRIMARY ATTEMPT)
+        "mov w27, #'2'\n"            // '2' = Trying Step 2A
+        "str w27, [x26]\n"
+        "mov w27, #'A'\n"            // 'A' = Step 2A
+        "str w27, [x26]\n"
+        
+        "mov x24, #0x1\n"            // M bit only
+        "msr sctlr_el1, x24\n"       // Try MMU-only enable
+        "mov w27, #'m'\n"            // 'm' = MMU-only completed
+        "str w27, [x26]\n"
+        
+        "orr x24, x24, #0x1000\n"    // Add I bit (instruction cache)
+        "msr sctlr_el1, x24\n"       // Try MMU + I
+        "mov w27, #'i'\n"            // 'i' = +instruction cache
+        "str w27, [x26]\n"
+        
+        "orr x24, x24, #0x4\n"       // Add C bit (data cache)
+        "msr sctlr_el1, x24\n"       // Try MMU + I + C
+        "mov w27, #'c'\n"            // 'c' = +data cache
+        "str w27, [x26]\n"
+        
+        // STEP 2B: Linux kernel standard SCTLR values (FALLBACK)
+        "mov w27, #'2'\n"            // '2' = Trying Step 2B
+        "str w27, [x26]\n"
+        "mov w27, #'B'\n"            // 'B' = Step 2B
+        "str w27, [x26]\n"
+        
+        "mov x24, #0x0830\n"         // Linux kernel base value (low 16)
+        "movk x24, #0x30C5, lsl #16\n" // Linux kernel base value (high 16)
+        "orr x24, x24, #0x1\n"       // Add MMU enable
+        "msr sctlr_el1, x24\n"       // Try Linux kernel values
+        "mov w27, #'L'\n"            // 'L' = Linux values completed
+        "str w27, [x26]\n"
+        
+        // Original approach (now as final fallback)
+        "msr sctlr_el1, x23\n"       // ← ORIGINAL MMU Enable (final fallback)
         
         // POST-MMU STATUS CHECK  
         "mov w27, #'M'\n"            // 'M' = MMU enable instruction completed
         "str w27, [x26]\n"
+        
+        // If we reach here, MMU enable succeeded!
         
         // DEBUG 6: Post-MMU Immediate Test
         "nop\n"                      // Single pipeline bubble
@@ -3237,9 +3405,13 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         // Second instruction synchronization after data barrier
         "isb\n"                      // Second instruction synchronization barrier
         
-        // STAGE 5: Now safe to execute normal instructions
+        // STAGE 5: Now safe to execute normal instructions AND enable interrupts
         "mov w27, #'5'\n"
         "str w27, [x26]\n"
+        
+        // INDUSTRY STANDARD: Enable interrupts AFTER MMU is fully stable
+        "msr daifclr, #2\n"          // Enable IRQ (clear I bit) - NOW SAFE!
+        "isb\n"                      // Ensure interrupt state change
         
         // STAGE 6: Additional post-MMU verification
         "mov w27, #'6'\n"
@@ -3287,6 +3459,15 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "str w27, [x26]\n"
         
         "br x22\n"                   // Branch to physical address
+        
+        // STEP 5A: Complete MMU bypass (if all MMU attempts fail)
+        // Uncomment if MMU enable consistently fails:
+        // "mov w27, #'N'\n"         // 'N' = No MMU
+        // "str w27, [x26]\n"
+        // "mov w27, #'0'\n"         // '0' = Operating
+        // "str w27, [x26]\n"
+        // // Continue with physical addressing
+        // "br x22\n"               // Branch to continuation
         
         // If we reach here, both branches failed
         "2:\n"
