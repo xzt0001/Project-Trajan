@@ -2,6 +2,7 @@
 #include "../include/task.h"
 #include "../include/pmm.h"
 #include "../include/vmm.h"
+#include "../include/address_space.h"
 #include "../include/scheduler.h"
 #include "../include/timer.h"
 #include "../include/types.h"
@@ -1097,70 +1098,104 @@ void kernel_main(unsigned long uart_addr) {
     uart_puts_early("Version 0.1.0 - Boot Sequence\n");
     uart_puts_early("========================================\n\n");
     
-    // Initialize memory management
+    // Initialize memory management using unified interface
     *uart = 'M';  // Memory initialization marker
-    init_pmm();
-    *uart = '1';  // PMM done marker
-    uart_debug_marker('B'); // After PMM initialization
+    extern int init_memory_subsystem(void);
+    int memory_result = init_memory_subsystem();
+    if (memory_result == 0) {
+        *uart = '0';  // Full MMU success marker
+        *uart = 'F'; *uart = 'U'; *uart = 'L'; // FUL - Full MMU support
+    } else if (memory_result == 1) {
+        *uart = '1';  // PMM-only mode marker
+        *uart = 'B'; *uart = 'Y'; *uart = 'P'; // BYP - Bypass mode
+    } else {
+        *uart = '!';  // Error marker
+        *uart = 'E'; *uart = 'R'; *uart = 'R'; // ERR - Error
+    }
+    uart_debug_marker('B'); // After memory initialization
     
     // Validate vector table at physical address before MMU
-    uart_puts_early("[BOOT] Validating vector table at physical address 0x89000\n");
+    *uart = 'V'; *uart = 'T'; *uart = 'C'; // VTC - Vector Table Check
     validate_vector_table_at_0x89000();
     
     // Improved vector table verification with clear markers
-    uart_puts_early("\n\n=========== VECTOR TABLE VERIFICATION ===========\n");
+    *uart = 'V'; *uart = 'T'; *uart = 'V'; // VTV - Vector Table Verification
     volatile uint8_t* p = (volatile uint8_t*)0x00089000;
     
     // Output first 32 bytes in a clean format
     for (int i = 0; i < 32; i++) {
         if (i % 8 == 0) {
-            uart_puts_early("\n0x");
-            uart_hex64_early((uint64_t)(p + i));
-            uart_puts_early(": ");
+            *uart = '\n';
+            *uart = '0'; *uart = 'x'; // 0x prefix
+            // Output address
+            uint64_t addr = (uint64_t)(p + i);
+            for (int j = 7; j >= 0; j--) {
+                uint8_t byte = (addr >> (j * 8)) & 0xFF;
+                uint8_t hi = (byte >> 4) & 0xF;
+                uint8_t lo = byte & 0xF;
+                *uart = hi < 10 ? '0' + hi : 'A' + (hi - 10);
+                *uart = lo < 10 ? '0' + lo : 'A' + (lo - 10);
+            }
+            *uart = ':'; *uart = ' ';
         }
         
         char hi = (p[i] >> 4) & 0xF;
         char lo = p[i] & 0xF;
-        uart_putc_early(hi < 10 ? '0' + hi : 'A' + (hi - 10));
-        uart_putc_early(lo < 10 ? '0' + lo : 'A' + (lo - 10));
-        uart_putc_early(' ');
+        *uart = hi < 10 ? '0' + hi : 'A' + (hi - 10);
+        *uart = lo < 10 ? '0' + lo : 'A' + (lo - 10);
+        *uart = ' ';
     }
-    uart_puts_early("\n\n=================================================\n\n");
+    *uart = '\n';
     
     uart_debug_marker('C'); // After vector table verification
     
     // Perform cache maintenance for vector table
-    uart_puts_early("[BOOT] Performing cache maintenance for vector table\n");
+    *uart = 'C'; *uart = 'M'; *uart = 'V'; // CMV - Cache Maintenance Vector
     asm volatile("dc cvau, %0" :: "r" (0x89000) : "memory");
     asm volatile("dsb ish");
     asm volatile("isb");
     
     // Set VBAR_EL1 to physical address BEFORE MMU
-    uart_puts_early("[BOOT] Setting VBAR_EL1 to physical 0x89000 before MMU\n");
+    *uart = 'V'; *uart = 'B'; *uart = 'S'; // VBS - VBAR Set
     write_vbar_el1(0x89000);
     uart_debug_marker('D'); // After setting VBAR_EL1 to 0x89000
     
-    // Initialize VMM (sets up MMU)
-    uart_puts_early("[BOOT] Initializing virtual memory management\n");
-    uart_puts_early("[BOOT] MMU is about to be enabled\n");
-    init_vmm_wrapper();
-    // After this point, MMU is enabled and we should use uart_puts_late
+    // Check if MMU was successfully initialized
+    if (memory_result == 0) {
+        // Full MMU mode - MMU is already enabled by init_memory_subsystem
+        *uart = 'M'; *uart = 'M'; *uart = 'U'; // MMU - MMU enabled
+        uart_puts_late("[BOOT] MMU is enabled, virtual addressing is active\n");
+    } else {
+        // Bypass mode - continue with physical addressing
+        *uart = 'P'; *uart = 'H'; *uart = 'Y'; // PHY - Physical addressing
+    }
     
-    // After MMU is enabled, update VBAR_EL1 to virtual address
-    // CRITICAL: Post-MMU code must use uart_puts_late
-    uart_puts_late("[BOOT] Updating VBAR_EL1 to virtual 0x1000000 after MMU\n");
-    write_vbar_el1(0x1000000);
-    uart_debug_marker_late('F'); // After setting VBAR_EL1 to 0x1000000
-    
-    // Test UART string output after MMU enable
-    // Use string literals directly inside this function to avoid stale pointer issues
-    uart_puts_late("[BOOT] Testing UART string output after MMU is enabled\n");
-    test_uart_after_mmu();
-    uart_debug_marker_late('G'); // After UART MMU test
+    // Handle post-initialization setup based on memory mode
+    if (memory_result == 0) {
+        // After MMU is enabled, update VBAR_EL1 to virtual address
+        // CRITICAL: Post-MMU code must use uart_puts_late
+        uart_puts_late("[BOOT] Updating VBAR_EL1 to virtual 0x1000000 after MMU\n");
+        write_vbar_el1(0x1000000);
+        uart_debug_marker_late('F'); // After setting VBAR_EL1 to 0x1000000
+        
+        // Test UART string output after MMU enable
+        // Use string literals directly inside this function to avoid stale pointer issues
+        uart_puts_late("[BOOT] Testing UART string output after MMU is enabled\n");
+        test_uart_after_mmu();
+        uart_debug_marker_late('G'); // After UART MMU test
+    } else {
+        // Bypass mode - continue with physical addressing
+        uart_puts_early("[BOOT] Continuing with physical UART at 0x89000\n");
+        uart_debug_marker('F'); // After bypass mode setup
+    }
     
     // Run exception handling tests
     test_exception_handling();
     
-    // Continue with initialization
-    uart_puts_late("\n[BOOT] Continuing kernel initialization...\n");
+    // Continue with initialization using appropriate UART function
+    if (memory_result == 0) {
+        uart_puts_late("\n[BOOT] Continuing kernel initialization...\n");
+    } else {
+        uart_puts_early("\n[BOOT] Continuing kernel initialization...\n");
+    }
 }

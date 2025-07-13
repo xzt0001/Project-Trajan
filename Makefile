@@ -23,6 +23,9 @@ OBJS := boot/start.o \
         kernel/test_uart_string.o \
         memory/pmm.o \
         memory/vmm.o \
+        memory/memory_core.o \
+        memory/memory_debug.o \
+        memory/address_space.o \
         kernel/context.o \
         kernel/timer.o \
         kernel/interrupts.o \
@@ -101,6 +104,12 @@ memory/pmm.o: memory/pmm.c
 
 memory/vmm.o: memory/vmm.c
 	$(CC) $(CFLAGS) -c memory/vmm.c -o memory/vmm.o
+
+memory/memory_core.o: memory/memory_core.c
+	$(CC) $(CFLAGS) -c memory/memory_core.c -o memory/memory_core.o
+
+memory/memory_debug.o: memory/memory_debug.c
+	$(CC) $(CFLAGS) -c memory/memory_debug.c -o memory/memory_debug.o
 
 kernel/task.o: kernel/task.c
 	$(CC) $(CFLAGS) -c kernel/task.c -o kernel/task.o

@@ -12,6 +12,3 @@ memory/
 ├── memory_config.h    // Runtime configuration switches
 └── memory_debug.c     // Debugging & verification tools
 
-Detailed diagrams:
-https://drive.google.com/file/d/1DynSIErjU63gyJtckzyGzf7rj0fC1naF/view?usp=sharing
-

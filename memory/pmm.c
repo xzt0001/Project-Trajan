@@ -2,6 +2,9 @@
 #include "../include/pmm.h"
 #include "../include/uart.h"
 #include "../include/string.h"
+#include "../include/vmm.h"
+#include "../include/memory_config.h"
+#include "../include/debug.h"
 
 // Declaration for debug_hex64 function from kernel/main.c
 extern void debug_hex64(const char* label, uint64_t value);
@@ -14,7 +17,7 @@ void test_memory_writability(void);  // Add forward declaration
 // Updated memory start address to 0x40000000 for better reliability
 #define MEMORY_START  0x40000000  // Using higher memory region known to be writable
 #define MEMORY_END    0x48000000  // 128MB region
-#define PAGE_SIZE     4096        // 4KB pages
+// NOTE: PAGE_SIZE is defined in memory_config.h
 
 // Kernel size is determined by linker script
 extern char __kernel_end[];
@@ -423,5 +426,401 @@ void test_memory_writability(void) {
         uart_puts("[PMM] Memory writability test FAILED\n");
         uart_puts("[PMM] Critical error: Memory write operations not working as expected\n");
     }
+}
+
+// ============================================================================
+// PHYSICAL MEMORY MAPPING FUNCTIONS (moved from vmm.c)
+// ============================================================================
+
+// External declarations for VMM functions we depend on
+extern uint64_t* l0_table;
+extern uint64_t* l0_table_ttbr1;
+extern bool debug_vmm;
+
+// External kernel page table functions
+extern uint64_t* get_kernel_page_table(void);
+extern uint64_t* get_kernel_ttbr1_page_table(void);
+extern uint64_t get_pte(uint64_t virt_addr);
+extern void register_mapping(uint64_t virt_start, uint64_t virt_end, uint64_t phys_start, 
+                     uint64_t flags, const char* name);
+
+// External UART functions
+extern void uart_puts_early(const char* str);
+extern void uart_hex64_early(uint64_t val);
+extern void uart_puts_safe_indexed(const char* str);
+extern void uart_emergency_hex64(uint64_t val);
+
+// External debug functions
+extern void debug_print(const char* msg);
+extern void debug_hex64(const char* label, uint64_t value);
+
+// NOTE: write_phys64 is implemented as a static inline function in memory_config.h
+
+/**
+ * @brief Allocate and initialize a new page table
+ * @return Pointer to the newly allocated page table, or NULL on failure
+ */
+uint64_t* create_page_table(void) {
+    void* table = alloc_page();
+    if (!table) {
+        uart_puts("[PMM] Failed to allocate page table!\n");
+        return NULL;
+    }
+
+    memset(table, 0, PAGE_SIZE);  // clear entries
+    return (uint64_t*)table;
+}
+
+/**
+ * @brief Map a single page to an L3 table
+ * @param l3_table Pointer to the L3 page table
+ * @param va Virtual address to map
+ * @param pa Physical address to map to
+ * @param flags Page table entry flags
+ */
+void map_page(uint64_t* l3_table, uint64_t va, uint64_t pa, uint64_t flags) {
+    if (l3_table == NULL) {
+        uart_puts_early("[PMM] Error: L3 table is NULL in map_page\n");
+        return;
+    }
+    
+    // Check if we're trying to map in the UART region - avoid unnecessary double mappings
+    if ((pa >= UART_PHYS && pa < (UART_PHYS + 0x1000)) ||
+        (va >= UART_PHYS && va < (UART_PHYS + 0x1000))) {
+        // Skip UART MMIO region to avoid collisions
+        uart_puts_early("[PMM] Skipping UART region mapping at PA=0x");
+        uart_hex64_early(pa);
+        uart_puts_early(" VA=0x");
+        uart_hex64_early(va);
+        uart_puts_early("\n");
+        return;
+    }
+    
+    uint64_t l3_index = (va >> PAGE_SHIFT) & (ENTRIES_PER_TABLE - 1);
+    uint64_t l3_entry = pa;
+    
+    // Add flags
+    l3_entry |= PTE_PAGE;  // Mark as a page entry
+    l3_entry |= flags;    // Add provided flags
+    
+    // Store the entry
+    l3_table[l3_index] = l3_entry;
+    
+    // Debug output
+    if (debug_vmm) {
+        uart_puts_early("[PMM] Mapped VA 0x");
+        uart_hex64_early(va);
+        uart_puts_early(" to PA 0x");
+        uart_hex64_early(pa);
+        uart_puts_early(" with flags 0x");
+        uart_hex64_early(flags);
+        uart_puts_early(" at L3 index ");
+        uart_hex64_early(l3_index);
+        uart_puts_early("\n");
+    }
+}
+
+/**
+ * @brief Map a range of virtual addresses to physical addresses
+ * @param l0_table Root page table
+ * @param virt_start Starting virtual address
+ * @param virt_end Ending virtual address
+ * @param phys_start Starting physical address
+ * @param flags Page table entry flags
+ */
+void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end, 
+               uint64_t phys_start, uint64_t flags) {
+    uart_puts_early("[PMM] Mapping VA 0x");
+    uart_hex64_early(virt_start);
+    uart_puts_early(" - 0x");
+    uart_hex64_early(virt_end);
+    uart_puts_early(" to PA 0x");
+    uart_hex64_early(phys_start);
+    uart_puts_early(" with flags 0x");
+    uart_hex64_early(flags);
+    uart_puts_early("\n");
+    
+    // Calculate the number of pages
+    uint64_t size = virt_end - virt_start;
+    uint64_t num_pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    
+    // Map each page
+    for (uint64_t i = 0; i < num_pages; i++) {
+        uint64_t virt_addr = virt_start + (i * PAGE_SIZE);
+        uint64_t phys_addr = phys_start + (i * PAGE_SIZE);
+        
+        // Determine which page table to use based on virtual address
+        uint64_t* page_table_to_use;
+        if (virt_addr >= HIGH_VIRT_BASE) {
+            // High virtual address - use TTBR1 page table
+            page_table_to_use = l0_table_ttbr1;
+            uart_puts_early("[PMM] Using TTBR1 page table for high VA 0x");
+            uart_hex64_early(virt_addr);
+            uart_puts_early("\n");
+        } else {
+            // Low virtual address - use TTBR0 page table (passed parameter)
+            page_table_to_use = l0_table;
+            uart_puts_early("[PMM] Using TTBR0 page table for low VA 0x");
+            uart_hex64_early(virt_addr);
+            uart_puts_early("\n");
+        }
+        
+        // Create/get L3 table for the virtual address
+        uint64_t* l3_table = get_l3_table_for_addr(page_table_to_use, virt_addr);
+        if (!l3_table) {
+            uart_puts_early("[PMM] ERROR: Could not get L3 table for address 0x");
+            uart_hex64_early(virt_addr);
+            uart_puts_early("\n");
+            continue;
+        }
+        
+        // Calculate the L3 index
+        uint64_t l3_idx = (virt_addr >> 12) & 0x1FF;
+        
+        // Create page table entry
+        uint64_t pte = (phys_addr & ~0xFFF) | flags;
+        
+        // Cache maintenance before updating PTE
+        asm volatile("dc civac, %0" :: "r"(&l3_table[l3_idx]) : "memory");
+        asm volatile("dsb ish" ::: "memory");
+        
+        // Write the mapping
+        l3_table[l3_idx] = pte;
+        
+        // Cache maintenance after updating PTE
+        asm volatile("dc civac, %0" :: "r"(&l3_table[l3_idx]) : "memory");
+        asm volatile("dsb ish" ::: "memory");
+        
+        // Perform explicit TLB invalidation for this address
+        asm volatile("tlbi vaae1is, %0" :: "r"(virt_addr >> 12) : "memory");
+        asm volatile("dsb ish" ::: "memory");
+    }
+    
+    // Final TLB invalidation after all updates
+    asm volatile("tlbi vmalle1is" ::: "memory");
+    asm volatile("dsb ish" ::: "memory");
+    asm volatile("isb" ::: "memory");
+    
+    // Register the mapping for diagnostic purposes
+    register_mapping(virt_start, virt_end, phys_start, flags, "Range mapping");
+}
+
+/**
+ * @brief Direct physical page mapping with automatic L3 table lookup
+ * @param va Virtual address to map
+ * @param pa Physical address to map to
+ * @param size Size of the mapping
+ * @param flags Page table entry flags
+ */
+void map_page_direct(uint64_t va, uint64_t pa, uint64_t size, uint64_t flags) {
+    if (l0_table == NULL) {
+        uart_puts("[PMM] ERROR: Cannot map page - l0_table not initialized\n");
+        return;
+    }
+    
+    // Get the L3 table for this address
+    uint64_t* l3_pt_local = get_l3_table_for_addr(l0_table, va);
+    if (l3_pt_local == NULL) {
+        uart_puts("[PMM] ERROR: Failed to get L3 table for address 0x");
+        uart_hex64(va);
+        uart_puts("\n");
+        return;
+    }
+    
+    // Map each page in the range
+    for (uint64_t offset = 0; offset < size; offset += PAGE_SIZE) {
+        uint64_t page_va = va + offset;
+        uint64_t page_pa = pa + offset;
+        
+        // Use the full version of map_page that takes an L3 table
+        map_page(l3_pt_local, page_va, page_pa, flags);
+    }
+}
+
+/**
+ * @brief Map a kernel page with proper TLB invalidation
+ * @param va Virtual address to map
+ * @param pa Physical address to map to
+ * @param flags Page table entry flags
+ */
+void map_kernel_page(uint64_t va, uint64_t pa, uint64_t flags) {
+    debug_print("[PMM] Mapping kernel page VA 0x");
+    debug_hex64("", va);
+    debug_print(" to PA 0x");
+    debug_hex64("", pa);
+    debug_print("\n");
+    
+    // Get the kernel page table
+    uint64_t* l0_table = get_kernel_page_table();
+    if (!l0_table) {
+        debug_print("[PMM] ERROR: Could not get kernel page table!\n");
+        return;
+    }
+    
+    // Get the L3 table for the address
+    uint64_t* l3_table = get_l3_table_for_addr(l0_table, va);
+    if (!l3_table) {
+        debug_print("[PMM] ERROR: Could not get L3 table for address!\n");
+        return;
+    }
+    
+    // Map the page
+    map_page(l3_table, va, pa, flags);
+    
+    // Flush TLB to ensure changes take effect
+    __asm__ volatile("dsb ishst");
+    __asm__ volatile("tlbi vmalle1is");
+    __asm__ volatile("dsb ish");
+    __asm__ volatile("isb");
+    
+    debug_print("[PMM] Kernel page mapped successfully\n");
+}
+
+/**
+ * @brief Map UART MMIO region for both virtual and identity addressing
+ */
+void map_uart(void) {
+    uart_puts_early("[PMM] Mapping UART MMIO region\n");
+    
+    // Make sure we have access to kernel L0 table
+    uint64_t* l0_table = get_kernel_page_table();
+    if (!l0_table) {
+        uart_puts_early("[PMM] ERROR: Failed to get kernel page table for UART mapping\n");
+        return;
+    }
+    
+    // Select the correct L0 root table for the UART virtual address.
+    // High kernel addresses (>= HIGH_VIRT_BASE) must be placed in the
+    // TTBR1 tree; low addresses use TTBR0.  UART_VIRT is always high, but
+    // keep the check generic in case the constant changes.
+
+    uint64_t* root_for_virt = (UART_VIRT >= HIGH_VIRT_BASE) ? l0_table_ttbr1
+                                                            : l0_table;
+
+    // Create/get L3 table for the UART virtual address region using the
+    // selected root.
+    uint64_t* l3_table = get_l3_table_for_addr(root_for_virt, UART_VIRT);
+    if (!l3_table) {
+        uart_puts_early("[PMM] ERROR: Could not get L3 table for UART virtual address\n");
+        return;
+    }
+    
+    // Device memory attributes for UART MMIO - FIXED: Add all required flags
+    uint64_t uart_flags = PTE_VALID | PTE_PAGE | PTE_AF |
+                          PTE_DEVICE_nGnRE | PTE_AP_RW |
+                          PTE_PXN | PTE_UXN;          // virtual
+    
+    // Make the UART virtual mapping non-executable to match the physical
+    // identity mapping and avoid attribute mismatches across descriptors.
+    uart_flags |= PTE_PXN | PTE_UXN;
+    
+    // Debug output before mapping
+    uart_puts_early("[PMM] UART mapping: PA 0x");
+    uart_hex64_early(UART_PHYS);
+    uart_puts_early(" -> VA 0x");
+    uart_hex64_early(UART_VIRT);
+    uart_puts_early(" with flags 0x");
+    uart_hex64_early(uart_flags);
+    uart_puts_early("\n");
+    
+    // Calculate the L3 index
+    uint64_t l3_idx = (UART_VIRT >> 12) & 0x1FF;
+    
+    // Create page table entry
+    uint64_t pte = UART_PHYS | uart_flags;
+    
+    // Perform proper cache maintenance on the page table entry before writing
+    asm volatile("dc civac, %0" :: "r"(&l3_table[l3_idx]) : "memory");
+    asm volatile("dsb ish" ::: "memory");
+    
+    // Write the mapping
+    l3_table[l3_idx] = pte;
+    
+    // Cache maintenance after updating the PTE
+    asm volatile("dc civac, %0" :: "r"(&l3_table[l3_idx]) : "memory");
+    asm volatile("dsb ish" ::: "memory");
+    
+    // Perform explicit TLB invalidation for this specific address
+    asm volatile("tlbi vaae1is, %0" :: "r"(UART_VIRT >> 12) : "memory");
+    asm volatile("dsb ish" ::: "memory");
+    asm volatile("isb" ::: "memory");
+    
+    // Verify the mapping was set correctly
+    uint64_t read_pte = l3_table[l3_idx];
+    uart_puts_early("[PMM] Verified UART PTE: 0x");
+    uart_hex64_early(read_pte);
+    uart_puts_early("\n");
+    
+    // Save the phys/virt addresses for diagnostic use
+    register_mapping(UART_VIRT, UART_VIRT + 0x1000, UART_PHYS, uart_flags, "UART MMIO");
+
+    // NEW: also create an *identity* mapping for the UART MMIO page so
+    // that the very first physical UART access that occurs immediately
+    // after the M-bit is set will translate successfully.  We cannot use
+    // map_kernel_page() because its internals eventually call map_page(),
+    // and map_page() intentionally skips any VA or PA inside the UART
+    // range to avoid double-mapping.  Therefore we build the entry
+    // manually, mirroring the logic used a few lines above for the high
+    // virtual mapping, but this time with VA = PA.
+
+    uint64_t* l3_table_phys = get_l3_table_for_addr(l0_table, UART_PHYS);
+    if (l3_table_phys) {
+        uint64_t l3_idx_phys = (UART_PHYS >> 12) & 0x1FF;
+        uint64_t pte_phys = UART_PHYS |
+                           PTE_VALID | PTE_PAGE | PTE_AF |
+                           PTE_SH_NONE |       // Device memory must be non-shareable
+                           PTE_DEVICE_nGnRE |
+                           PTE_AP_RW |
+                           PTE_PXN | PTE_UXN;  // never executable
+
+        // Cache maintenance
+        asm volatile("dc civac, %0" :: "r"(&l3_table_phys[l3_idx_phys]) : "memory");
+        asm volatile("dsb ish" ::: "memory");
+
+        l3_table_phys[l3_idx_phys] = pte_phys;
+
+        asm volatile("dc civac, %0" :: "r"(&l3_table_phys[l3_idx_phys]) : "memory");
+        asm volatile("dsb ish" ::: "memory");
+
+        // Register for diagnostics
+        register_mapping(UART_PHYS, UART_PHYS + 0x1000, UART_PHYS, pte_phys, "UART MMIO (ID)");
+    }
+}
+
+/**
+ * @brief Verify UART mapping after MMU is enabled
+ */
+void verify_uart_mapping(void) {
+    uart_puts_safe_indexed("[PMM] Verifying UART virtual mapping post-MMU\n");
+    
+    // Get UART PTE from page tables
+    uint64_t pte = get_pte(UART_VIRT);
+    
+    // Output PTE value for verification
+    uart_puts_safe_indexed("[PMM] UART PTE post-MMU: 0x");
+    uart_emergency_hex64(pte);
+    uart_puts_safe_indexed("\n");
+    
+    // Check if the PTE is valid
+    if (!(pte & PTE_VALID)) {
+        uart_puts_safe_indexed("[PMM] ERROR: UART mapping is not valid!\n");
+        return;
+    }
+    
+    // Check memory attributes
+    uint64_t attr_idx = (pte >> 2) & 0x7;
+    uart_puts_safe_indexed("[PMM] UART memory attribute index: ");
+    uart_emergency_hex64(attr_idx);
+    uart_puts_safe_indexed("\n");
+    
+    // Verify UART functionality by reading UART registers
+    volatile uint32_t* uart_fr = (volatile uint32_t*)(UART_VIRT + 0x18);
+    uint32_t fr_val = *uart_fr;
+    
+    uart_puts_safe_indexed("[PMM] UART FR register value: 0x");
+    uart_emergency_hex64(fr_val);
+    uart_puts_safe_indexed("\n");
+    
+    uart_puts_safe_indexed("[PMM] UART mapping verification complete\n");
 }
 
