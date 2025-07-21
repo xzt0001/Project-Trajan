@@ -1,4 +1,4 @@
-*Note: This document establishes the intellectual foundation and long-term vision for this project. It is not a description of current capabilities, but a roadmap for where this project is headed. The philosophical concepts will be demonstrated incrementally as the technical infrastructure matures. Current focus is on building reliable, well-documented foundation components that can support the simulation phase.
+*Note: This document is a short summary of the philosophy behind this project, it establishes the intellectual foundation and long-term vision. This is not a description of current capabilities, but a roadmap for where this project is headed. The philosophical concepts will be demonstrated incrementally as the technical infrastructure matures. Current focus is on building reliable, well-documented foundation components that can support the simulation phase.
 
 
 

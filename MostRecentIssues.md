@@ -1,5 +1,15 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
+July 21st 2025
+
+After adding more debug code in memory_core.c, the most likely root causes for the hang are:
+1. Hardware/QEMU issue
+2. Interrupt interference
+3. Memory coherency
+4. QEMU MMU emulation bug
+
+Latest kernel log: https://docs.google.com/document/d/1bxsN9yYKinFYpxTyc8XGWqoaPOV4PuG_CuRb1vpQQ2Q/edit?usp=sharing
+
 July 9th 2025
 
 It appears the problem now is the mmu enable instruction itself.

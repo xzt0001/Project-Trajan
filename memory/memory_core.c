@@ -829,8 +829,237 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         
         "26:\n"                      // Continue
         
-        // STAGE 4: **MINIMAL MMU ENABLE TEST**
+        // PRE-MMU CPU STATE DUMP - 4 Critical Missing Pieces
+        "mov w27, #'C'\n"            // 'C' = CPU state
+        "str w27, [x26]\n"
+        "mov w27, #'P'\n"            // 'P' = cPu
+        "str w27, [x26]\n"
+        "mov w27, #'U'\n"            // 'U' = cpU
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // 1. Current Exception Level
+        "mrs x28, currentel\n"       // Get current exception level
+        "lsr x28, x28, #2\n"         // Extract EL bits [3:2]
+        "and x28, x28, #0x3\n"       // Mask to 2 bits (EL0-EL3)
+        "add w27, w28, #'0'\n"       // Convert EL to ASCII (should be '1' for EL1)
+        "str w27, [x26]\n"
+        
+        // 2. Current SCTLR_EL1 State (before our modification)
+        "mov w27, #'S'\n"            // 'S' = SCTLR
+        "str w27, [x26]\n"
+        "mrs x28, sctlr_el1\n"       // Read current SCTLR_EL1
+        
+        // Show critical bits: M(0), C(2), I(12)
+        "and x29, x28, #0x1\n"       // Extract M bit (MMU enable)
+        "add w27, w29, #'0'\n"       // Convert to ASCII
+        "str w27, [x26]\n"           // Should be '0' (MMU disabled)
+        
+        "and x29, x28, #0x4\n"       // Extract C bit (data cache)
+        "lsr x29, x29, #2\n"         // Shift to bit 0
+        "add w27, w29, #'0'\n"       // Convert to ASCII
+        "str w27, [x26]\n"
+        
+        "and x29, x28, #0x1000\n"    // Extract I bit (instruction cache)
+        "lsr x29, x29, #12\n"        // Shift to bit 0
+        "add w27, w29, #'0'\n"       // Convert to ASCII
+        "str w27, [x26]\n"
+        
+        // 3. Stack Pointer State
+        "mov w27, #'P'\n"            // 'P' = sP (stack pointer)
+        "str w27, [x26]\n"
+        "mov x28, sp\n"              // Get current stack pointer
+        "and x29, x28, #0xF\n"       // Check 16-byte alignment
+        "add w27, w29, #'0'\n"       // Convert alignment to ASCII (should be '0')
+        "str w27, [x26]\n"
+        
+        // 4. DAIF (Interrupt Mask) State
+        "mov w27, #'I'\n"            // 'I' = Interrupts (DAIF)
+        "str w27, [x26]\n"
+        "mrs x28, daif\n"            // Get interrupt mask state
+        
+        // Show key interrupt bits: D(3), A(2), I(1), F(0)
+        "and x29, x28, #0x8\n"       // Extract D bit (debug exceptions)
+        "lsr x29, x29, #3\n"         // Shift to bit 0
+        "add w27, w29, #'0'\n"       // Convert to ASCII
+        "str w27, [x26]\n"
+        
+        "and x29, x28, #0x4\n"       // Extract A bit (async aborts)
+        "lsr x29, x29, #2\n"         // Shift to bit 0
+        "add w27, w29, #'0'\n"       // Convert to ASCII
+        "str w27, [x26]\n"
+        
+        "and x29, x28, #0x2\n"       // Extract I bit (IRQ)
+        "lsr x29, x29, #1\n"         // Shift to bit 0
+        "add w27, w29, #'0'\n"       // Convert to ASCII
+        "str w27, [x26]\n"
+        
+        "and x29, x28, #0x1\n"       // Extract F bit (FIQ)
+        "add w27, w29, #'0'\n"       // Convert to ASCII
+        "str w27, [x26]\n"
+        
+        // STEP 4A: **MINIMAL SCTLR_EL1 CONFIGURATION TEST** (Option 4A)
+        // Test with absolute minimum SCTLR_EL1 settings first
         "mov w27, #'4'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'A'\n"
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // Read current SCTLR_EL1 to preserve non-MMU bits
+        "mrs x28, sctlr_el1\n"
+        
+        // Create minimal configuration: preserve all bits except MMU-related ones
+        "bic x28, x28, #0x1\n"       // Clear M bit (MMU enable)
+        "bic x28, x28, #0x4\n"       // Clear C bit (data cache)
+        "bic x28, x28, #0x1000\n"    // Clear I bit (instruction cache)
+        
+        // Set ONLY the MMU enable bit
+        "orr x28, x28, #0x1\n"       // Set M bit (MMU enable) - this is all we need
+        
+        // Debug: Show minimal SCTLR value we're about to test
+        "mov w27, #'M'\n"            // 'M' = Minimal
+        "str w27, [x26]\n"
+        "mov w27, #'I'\n"            // 'I' = Initial
+        "str w27, [x26]\n"
+        "mov w27, #'N'\n"            // 'N' = miNimal
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // Output minimal SCTLR value (simplified - just show if MMU bit is set)
+        "and x29, x28, #0x1\n"       // Check MMU bit
+        "add w27, w29, #'0'\n"       // Convert to ASCII (should be '1')
+        "str w27, [x26]\n"
+        
+        // CRITICAL: Comprehensive cache and TLB maintenance before minimal test
+        "dsb sy\n"                   // Full system data synchronization
+        "tlbi vmalle1\n"             // Invalidate all TLB entries
+        "dsb ish\n"                  // Data synchronization barrier (inner shareable)
+        "ic iallu\n"                 // Invalidate instruction cache
+        "dsb sy\n"                   // Wait for instruction cache invalidation
+        "isb\n"                      // Instruction synchronization barrier
+        
+        // TEST 1: Try minimal MMU enable (MMU bit only, no caches)
+        "mov w27, #'T'\n"            // 'T' = Test
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"            // '1' = Test 1
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // Attempt minimal MMU enable
+        "msr sctlr_el1, x28\n"       // Set minimal SCTLR (just MMU bit)
+        "isb\n"                      // Immediate instruction synchronization
+        
+        // Test if minimal MMU enable worked
+        "mrs x29, sctlr_el1\n"       // Read back SCTLR_EL1
+        "and x30, x29, #0x1\n"       // Check if MMU bit is set
+        "cbnz x30, minimal_mmu_success\n" // Branch if MMU bit is set
+        
+        // Minimal MMU test failed
+        "mov w27, #'F'\n"            // 'F' = Failed
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"            // '1' = Test 1 failed
+        "str w27, [x26]\n"
+        "b test_progressive_enable\n" // Try progressive enable
+        
+        "minimal_mmu_success:\n"
+        // Minimal MMU enable succeeded!
+        "mov w27, #'S'\n"            // 'S' = Success  
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"            // '1' = Test 1 succeeded
+        "str w27, [x26]\n"
+        
+        // Add a small delay to let MMU stabilize
+        "mov x30, #1000\n"           // Small delay counter
+        "1:\n"
+        "subs x30, x30, #1\n"
+        "bne 1b\n"
+        
+        // Post-MMU instruction pipeline synchronization for minimal config
+        "isb\n"                      // Force instruction pipeline flush
+        "nop\n"                      // Pipeline bubble 1
+        "nop\n"                      // Pipeline bubble 2
+        "dsb sy\n"                   // System-wide data synchronization
+        "isb\n"                      // Second instruction synchronization
+        
+        // Success with minimal configuration - now optionally add caches
+        "mov w27, #'A'\n"            // 'A' = Add caches
+        "str w27, [x26]\n"
+        "mov w27, #'D'\n"            // 'D' = aDd
+        "str w27, [x26]\n"
+        "mov w27, #'D'\n"            // 'D' = aDd
+        "str w27, [x26]\n"
+        
+        // Optionally add instruction cache (safer than data cache)
+        "orr x28, x28, #0x1000\n"    // Add I bit (instruction cache)
+        "msr sctlr_el1, x28\n"       // Update SCTLR_EL1
+        "isb\n"                      // Synchronize
+        
+        // Test if instruction cache addition worked
+        "mrs x29, sctlr_el1\n"       // Read back
+        "and x30, x29, #0x1000\n"    // Check I bit
+        "cbnz x30, icache_added\n"   // Branch if I bit is set
+        
+        // I-cache addition failed, but MMU still works
+        "mov w27, #'i'\n"            // 'i' = icache failed (lowercase)
+        "str w27, [x26]\n"
+        "b minimal_mmu_final\n"
+        
+        "icache_added:\n"
+        "mov w27, #'I'\n"            // 'I' = Icache added successfully
+        "str w27, [x26]\n"
+        
+        // Optionally try adding data cache (most risky)
+        "orr x28, x28, #0x4\n"       // Add C bit (data cache)
+        "msr sctlr_el1, x28\n"       // Update SCTLR_EL1
+        "isb\n"                      // Synchronize
+        
+        // Test if data cache addition worked
+        "mrs x29, sctlr_el1\n"       // Read back
+        "and x30, x29, #0x4\n"       // Check C bit
+        "cbnz x30, dcache_added\n"   // Branch if C bit is set
+        
+        // D-cache addition failed, but MMU + I-cache still works
+        "mov w27, #'c'\n"            // 'c' = dcache failed (lowercase)
+        "str w27, [x26]\n"
+        "b minimal_mmu_final\n"
+        
+        "dcache_added:\n"
+        "mov w27, #'C'\n"            // 'C' = Dcache added successfully
+        "str w27, [x26]\n"
+        
+        "minimal_mmu_final:\n"
+        // Final success with minimal configuration
+        "mov w27, #'M'\n"            // 'M' = Minimal
+        "str w27, [x26]\n"
+        "mov w27, #'O'\n"            // 'O' = Ok
+        "str w27, [x26]\n"
+        "mov w27, #'K'\n"            // 'K' = oK
+        "str w27, [x26]\n"
+        
+        // Jump directly to continuation point - minimal config worked
+        "br x22\n"                   // Branch to physical continuation address
+        
+        "test_progressive_enable:\n"
+        // Minimal test failed, try progressive enable approach
+        "mov w27, #'P'\n"            // 'P' = Progressive
+        "str w27, [x26]\n"
+        "mov w27, #'R'\n"            // 'R' = pRogressive
+        "str w27, [x26]\n"
+        "mov w27, #'O'\n"            // 'O' = prOgressive
+        "str w27, [x26]\n"
+        
+        // Fall through to existing complex sequence as fallback
+        
+        // STAGE 4B: **EXISTING COMPLEX MMU ENABLE SEQUENCE** (Fallback)
+        // If minimal configuration failed, try the original complex sequence
+        "mov w27, #'4'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'B'\n"            // 'B' = Fallback sequence
         "str w27, [x26]\n"
         
         // FIXED: Preserve cache bits in SCTLR_EL1 (don't clear them!)
