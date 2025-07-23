@@ -8,18 +8,20 @@ The four television series that most precisely reflect this lifelong study—and
 
 It is political truth that ceremony endures long after sovereignty has eroded.
 
-My decision to take this historical and political worldview into the digital realm was catalyzed by the discovery and the analysis of Pegasus. Pegasus did not merely exploit a vulnerability—it embodied everything I had studied in the collapse of regimes. It showed how a system can run, respond, log, and even appears to be normal to the user, while being utterly compromised beneath the surface. Pegasus was not loud. It was not brute force. It was subversion masqueraded as continuity—a perfect metaphor for the ceremonial decay I had spent years studying in history. In that sense, Pegasus became the anchor point for this project: a digital analogue to imperial fragility.
+My decision to take this historical and political worldview into the digital realm was catalyzed by the discovery and the analysis of Pegasus. Pegasus did not merely exploit a vulnerability, it embodied everything I had studied in the collapse of regimes. It showed how a system can run, respond, log, and even appears to be normal to the user, while being utterly compromised beneath the surface. Pegasus was not loud. It was not brute force. It was subversion masqueraded as continuity, a perfect metaphor for the ceremonial decay I had spent years studying in history. In that sense, Pegasus became the anchor point for this project: a digital analogue to imperial fragility. 
 
-This project would become a custom ARM64 kernel that simulates the most advanced forms of system subversion—not through visible breach, but through covert compromise wrapped in ceremonial normalcy. This is not an exploit lab. This is not malware. It is a controlled research framework for modeling Pegasus-class adversarial persistence in a kernel that appears to be intact.
+The subversion of institutions, whether by code or by ceremony, is a recurring pattern across civilizations. Its form changes constantly, but the logic does not. To treat Pegasus as a watershed event is to forget that power, subversion, and decay are the constants of any system, regardless of the era or the relative stability that precedes it.
 
-Most system thinking assumes the architecture is fundamentally trustworthy. Security failures are typically modeled as bugs—memory violations, access leaks, permission bypasses—that must be patched, hardened, or sandboxed. And in doing so, we assume that when a system is attacked, it will misbehave-throw a panic, break a lock, or fail a check.
+This project would become a customizable ARM64 operating system that simulates the most advanced forms of system subversion, not through visible breach, but through flawless performance that conceals hidden control. It is both a question and a tool: How far trust can be subverted while ritual remains? Here, every answer would only deepen the inquiry, and every resolution marks the beginning of the next iteration.
+
+Most system thinking assumes the architecture is fundamentally trustworthy. Security failures are typically modeled as bugs—memory violations, access leaks, permission bypasses—that must be patched, hardened, or sandboxed. And in doing so, we assume that when a system is attacked, it will misbehave: throw a panic, break a lock, or fail a check.
 
 But what if the system doesn’t fail?
 What if it logs everything… but only the curated version?
 What if init starts every process… but under foreign control?
 What if the page tables are correct… and corrupted?
 
-Project 500 is built to simulate exactly that world: a sovereign operating system that obeys all formal specifications while being inwardly subverted. The result is not dysfunction—it is ceremonial obedience masking structural compromise. That is the real danger.
+Project 500 is built to simulate exactly that world: an operating system that obeys all formal specifications while being completly subverted from the inside. The result is not dysfunction, but ceremonial obedience masking structural compromise.
 
 This project proposes a new class of system simulation: one that models what happens when the kernel is no longer sovereign, but still functional. It turns “trust boundaries” into a philosophical question. It challenges the idea that correctness is security. It teaches a harder truth: that some failures wear a mask of health.
 

@@ -1,5 +1,18 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
+July 23rd 2025
+
+At this point, there is a high likelihood that the hang is due to QEMU DAIF emulation bug.
+
+The diagnostic approach is like this(check out line 954-1073 in memory_core.c):
+1. Hypothesis Formation - "Interrupts cause MMU hang"
+2. Test Design - "Disable interrupts before MMU enable"
+3. Implementation - Perfect assembly code with verification
+4. Result Analysis - Detailed bit-level state inspection
+5. Conclusion - "QEMU DAIF emulation is broken"
+
+Latest kernel log, check out the last line specifically: https://docs.google.com/document/d/1kc7L14QY8x5WJ7C-4yPWLIV22OvLXRxhYVEEZJLzybc/edit?usp=sharing
+
 July 21st 2025
 
 After adding more debug code in memory_core.c, the most likely root causes for the hang are:

@@ -950,7 +950,128 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #':'\n"
         "str w27, [x26]\n"
         
-        // Attempt minimal MMU enable
+        // CRITICAL: Disable ALL interrupts before MMU enable
+        "mov w27, #'D'\n"            // 'D' = Disable interrupts marker
+        "str w27, [x26]\n"
+        "mov w27, #'I'\n"            // 'I' = Interrupts
+        "str w27, [x26]\n"
+        "mov w27, #'S'\n"            // 'S' = diSable
+        "str w27, [x26]\n"
+        
+        "msr daifset, #15\n"         // Disable ALL interrupts (D,A,I,F bits)
+        "isb\n"                      // Synchronize interrupt state change
+        
+        // Debug: Read back DAIF and show each bit individually
+        "mrs x29, daif\n"            // Read back DAIF register
+        "mov w27, #'D'\n"            // 'D' = DAIF debug marker
+        "str w27, [x26]\n"
+        "mov w27, #'A'\n"            // 'A' = dAif
+        "str w27, [x26]\n"
+        "mov w27, #'I'\n"            // 'I' = daIf  
+        "str w27, [x26]\n"
+        "mov w27, #'F'\n"            // 'F' = daiF
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // Output D bit (bit 3 of DAIF)
+        "and x30, x29, #0x8\n"       // Extract D bit (position 3)
+        "lsr x30, x30, #3\n"         // Shift to position 0
+        "add w27, w30, #'0'\n"       // Convert to ASCII
+        "str w27, [x26]\n"           // Output D bit (should be '1' if disabled)
+        
+        // Output A bit (bit 2 of DAIF)
+        "and x30, x29, #0x4\n"       // Extract A bit (position 2)
+        "lsr x30, x30, #2\n"         // Shift to position 0
+        "add w27, w30, #'0'\n"       // Convert to ASCII
+        "str w27, [x26]\n"           // Output A bit (should be '1' if disabled)
+        
+        // Output I bit (bit 1 of DAIF)
+        "and x30, x29, #0x2\n"       // Extract I bit (position 1)
+        "lsr x30, x30, #1\n"         // Shift to position 0
+        "add w27, w30, #'0'\n"       // Convert to ASCII
+        "str w27, [x26]\n"           // Output I bit (should be '1' if disabled)
+        
+        // Output F bit (bit 0 of DAIF)
+        "and x30, x29, #0x1\n"       // Extract F bit (position 0)
+        "add w27, w30, #'0'\n"       // Convert to ASCII
+        "str w27, [x26]\n"           // Output F bit (should be '1' if disabled)
+        
+        // Check if ALL interrupts are properly disabled
+        "and x30, x29, #0xF\n"       // Get all 4 DAIF bits
+        "cmp x30, #0xF\n"            // Should be 1111 (all disabled)
+        "beq interrupts_fully_disabled\n"
+        
+        // Partial or no interrupt disable - show what we got vs what we expected
+        "mov w27, #'P'\n"            // 'P' = Partial disable
+        "str w27, [x26]\n"
+        "mov w27, #'A'\n"            // 'A' = pArtial
+        "str w27, [x26]\n"
+        "mov w27, #'R'\n"            // 'R' = paRtial
+        "str w27, [x26]\n"
+        "mov w27, #'T'\n"            // 'T' = parT
+        "str w27, [x26]\n"
+        
+        // Show expected vs actual
+        "mov w27, #'E'\n"            // 'E' = Expected
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"            // '1' = 1111 expected
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"
+        "str w27, [x26]\n"
+        
+        "mov w27, #'G'\n"            // 'G' = Got
+        "str w27, [x26]\n"
+        
+        // Re-output the actual DAIF bits we got (for comparison)
+        "and x30, x29, #0x8\n"       // D bit
+        "lsr x30, x30, #3\n"
+        "add w27, w30, #'0'\n"
+        "str w27, [x26]\n"
+        "and x30, x29, #0x4\n"       // A bit
+        "lsr x30, x30, #2\n"
+        "add w27, w30, #'0'\n"
+        "str w27, [x26]\n"
+        "and x30, x29, #0x2\n"       // I bit
+        "lsr x30, x30, #1\n"
+        "add w27, w30, #'0'\n"
+        "str w27, [x26]\n"
+        "and x30, x29, #0x1\n"       // F bit
+        "add w27, w30, #'0'\n"
+        "str w27, [x26]\n"
+        
+        // Proceed anyway - try MMU enable even with partial interrupt disable
+        "mov w27, #'C'\n"            // 'C' = Continue anyway
+        "str w27, [x26]\n"
+        "mov w27, #'O'\n"            // 'O' = cOntinue
+        "str w27, [x26]\n"
+        "mov w27, #'N'\n"            // 'N' = coNtinue
+        "str w27, [x26]\n"
+        "b attempt_mmu_enable\n"     // Jump to MMU enable attempt
+        
+        "interrupts_fully_disabled:\n"
+        "mov w27, #'F'\n"            // 'F' = Full disable success
+        "str w27, [x26]\n"
+        "mov w27, #'U'\n"            // 'U' = fUll
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"            // 'L' = fuLl
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"            // 'L' = fulL
+        "str w27, [x26]\n"
+        
+        "attempt_mmu_enable:\n"
+        // Attempt minimal MMU enable (with interrupts disabled/partially disabled)
+        "mov w27, #'M'\n"            // 'M' = MMU enable attempt marker
+        "str w27, [x26]\n"
+        "mov w27, #'M'\n"            // 'M' = MMU
+        "str w27, [x26]\n"
+        "mov w27, #'U'\n"            // 'U' = mmU
+        "str w27, [x26]\n"
+        
         "msr sctlr_el1, x28\n"       // Set minimal SCTLR (just MMU bit)
         "isb\n"                      // Immediate instruction synchronization
         
@@ -972,6 +1093,15 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "str w27, [x26]\n"
         "mov w27, #'1'\n"            // '1' = Test 1 succeeded
         "str w27, [x26]\n"
+        
+        // Re-enable interrupts now that MMU is stable
+        "mov w27, #'R'\n"            // 'R' = Re-enable interrupts marker
+        "str w27, [x26]\n"
+        "mov w27, #'E'\n"            // 'E' = rE-enable
+        "str w27, [x26]\n"
+        
+        "msr daifclr, #15\n"         // Re-enable ALL interrupts (clear D,A,I,F bits)
+        "isb\n"                      // Synchronize interrupt state change
         
         // Add a small delay to let MMU stabilize
         "mov x30, #1000\n"           // Small delay counter

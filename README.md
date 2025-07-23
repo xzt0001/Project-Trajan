@@ -6,8 +6,7 @@ Includes UART logging, stack setup, physical memory management, virtual memory m
 
 **Current Status: This project is currently in its foundational development stage. The Philosophy.md document establishes the intellectual framework and long-term vision, while the current codebase builds the essential technical infrastructure needed to eventually demonstrate these concepts.
 
-
-To those who need clarification: This platform is for simulation only, not deployment.
+**Researchers interested in adversarial OS design, trust boundaries, or system subversion are invited to initiate technical dialogue or collaboration.
 
 
 For debugging blogs, Q&A, please visit: https://medium.com/@xzt0202 
