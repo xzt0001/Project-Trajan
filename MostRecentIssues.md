@@ -1,5 +1,31 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
+July 27th 2025
+
+I added a timeout mechanism that should work like this:
+"
+Iteration 1: msr sctlr_el1, x28 → interrupt fires → MMU bit = 0
+Iteration 2: msr sctlr_el1, x28 → interrupt fires → MMU bit = 0  
+Iteration 3: msr sctlr_el1, x28 → interrupt fires → MMU bit = 0
+...
+Iterations 1000+: Eventually MMU enables between interrupts → SUCCESS
+Timeout Scenario:
+1M iterations completed → timeout handler → try alternative approach
+"
+But the latest kernel log shows the system hangs immediately after LOOP marker after line 1106 in memory_core.c.
+
+This confirms the hang is almost certain a hard CPU halt, not an infinite loop, because:
+1. No timeout counter decrements (would see progress markers)
+2. No retry attempts (would see . progress dots)
+3. Complete instruction pipeline freeze
+
+Next steps would likely involve:
+1: Change the cpu model
+2: Try the latest QEMU
+
+
+Latest kernel log(Check out the last line): https://docs.google.com/document/d/10g2wIC9Cj6006UDV5GZkEnE-ULnX7lZQNwPRckBmGAg/edit?usp=sharing
+
 July 23rd 2025
 
 At this point, there is a high likelihood that the hang is due to QEMU DAIF emulation bug.

@@ -1064,7 +1064,8 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "str w27, [x26]\n"
         
         "attempt_mmu_enable:\n"
-        // Attempt minimal MMU enable (with interrupts disabled/partially disabled)
+        // **OPTION A: QEMU DAIF BUG BYPASS - TIMEOUT-BASED MMU ENABLE**
+        // Since QEMU can't disable interrupts properly, use timeout/retry approach
         "mov w27, #'M'\n"            // 'M' = MMU enable attempt marker
         "str w27, [x26]\n"
         "mov w27, #'M'\n"            // 'M' = MMU
@@ -1072,20 +1073,139 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #'U'\n"            // 'U' = mmU
         "str w27, [x26]\n"
         
+        // STAGE 1: Setup timeout counter for MMU enable retry loop
+        "mov w27, #'T'\n"            // 'T' = Timeout setup
+        "str w27, [x26]\n"
+        "mov w27, #'O'\n"            // 'O' = timeOut
+        "str w27, [x26]\n"
+        "mov w27, #'S'\n"            // 'S' = Setup
+        "str w27, [x26]\n"
+        
+        "mov x30, #0x50000\n"        // Large timeout counter (320K iterations)
+        
+        // STAGE 2: Pre-timeout state verification
+        "mov w27, #'P'\n"            // 'P' = Pre-timeout verification
+        "str w27, [x26]\n"
+        "mov w27, #'R'\n"            // 'R' = pRe
+        "str w27, [x26]\n"
+        "mov w27, #'E'\n"            // 'E' = prE
+        "str w27, [x26]\n"
+        
+        // Verify SCTLR state before timeout loop
+        "mrs x29, sctlr_el1\n"       // Read current SCTLR_EL1
+        "and x0, x29, #0x1\n"        // Check if MMU is already enabled
+        "cbnz x0, already_enabled\n" // Branch if MMU already enabled
+        
+        // STAGE 3: Timeout-based MMU enable loop
+        "mov w27, #'L'\n"            // 'L' = Loop start
+        "str w27, [x26]\n"
+        "mov w27, #'O'\n"            // 'O' = lOop
+        "str w27, [x26]\n"
+        "mov w27, #'O'\n"            // 'O' = loOp
+        "str w27, [x26]\n"
+        "mov w27, #'P'\n"            // 'P' = looP
+        "str w27, [x26]\n"
+        
+        "mmu_timeout_retry_loop:\n"
+        // Decrement timeout counter first
+        "subs x30, x30, #1\n"        // Decrement and set flags
+        "beq mmu_timeout_handler\n"  // Branch if timeout reached (x30 = 0)
+        
+        // Output progress marker every 16K iterations (for debugging)
+        "and x0, x30, #0x3FFF\n"     // Check if low 14 bits are zero
+        "cbnz x0, skip_progress\n"   // Skip if not at 16K boundary
+        "mov w27, #'.'\n"            // Progress marker
+        "str w27, [x26]\n"
+        "skip_progress:\n"
+        
+        // Attempt MMU enable
         "msr sctlr_el1, x28\n"       // Set minimal SCTLR (just MMU bit)
         "isb\n"                      // Immediate instruction synchronization
         
-        // Test if minimal MMU enable worked
+        // Test if MMU enable succeeded
         "mrs x29, sctlr_el1\n"       // Read back SCTLR_EL1
-        "and x30, x29, #0x1\n"       // Check if MMU bit is set
-        "cbnz x30, minimal_mmu_success\n" // Branch if MMU bit is set
+        "and x0, x29, #0x1\n"        // Check if MMU bit is actually set
+        "cbnz x0, mmu_timeout_success\n" // Branch if MMU bit is set
         
-        // Minimal MMU test failed
+        // MMU not enabled yet, add small delay and retry
+        "mov x0, #100\n"             // Small delay counter
+        "delay_loop:\n"
+        "subs x0, x0, #1\n"          // Decrement delay
+        "bne delay_loop\n"           // Loop until delay complete
+        
+        // Continue retry loop
+        "b mmu_timeout_retry_loop\n"
+        
+        "already_enabled:\n"
+        // MMU was already enabled somehow
+        "mov w27, #'A'\n"            // 'A' = Already enabled
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"            // 'L' = aLready
+        "str w27, [x26]\n"
+        "mov w27, #'R'\n"            // 'R' = alReady
+        "str w27, [x26]\n"
+        "b minimal_mmu_success\n"    // Jump to success path
+        
+        "mmu_timeout_success:\n"
+        // MMU enable succeeded within timeout
+        "mov w27, #'T'\n"            // 'T' = Timeout success
+        "str w27, [x26]\n"
+        "mov w27, #'S'\n"            // 'S' = Success
+        "str w27, [x26]\n"
+        "mov w27, #'U'\n"            // 'U' = sUccess
+        "str w27, [x26]\n"
+        
+        // Show how many iterations were left (simplified)
+        "and x0, x30, #0xF\n"        // Get low 4 bits of remaining counter
+        "cmp x0, #10\n"
+        "b.lt ts1\n"
+        "add x0, x0, #'A'-10\n"      // Convert to A-F
+        "b ts2\n"
+        "ts1: add x0, x0, #'0'\n"    // Convert to 0-9
+        "ts2: str w0, [x26]\n"       // Output remaining iterations (low nibble)
+        
+        "b minimal_mmu_success\n"    // Jump to success path
+        
+        "mmu_timeout_handler:\n"
+        // Timeout occurred - MMU enable failed despite multiple attempts
+        "mov w27, #'T'\n"            // 'T' = Timeout
+        "str w27, [x26]\n"
+        "mov w27, #'O'\n"            // 'O' = timeOut
+        "str w27, [x26]\n"
+        "mov w27, #'U'\n"            // 'U' = timeOUt
+        "str w27, [x26]\n"
+        "mov w27, #'T'\n"            // 'T' = timeouT
+        "str w27, [x26]\n"
+        
+        // Verify final state
+        "mrs x29, sctlr_el1\n"       // Read final SCTLR_EL1
+        "and x0, x29, #0x1\n"        // Check final MMU state
+        "cbnz x0, late_success\n"    // Check if MMU enabled after timeout
+        
+        // True timeout failure - MMU never enabled
         "mov w27, #'F'\n"            // 'F' = Failed
         "str w27, [x26]\n"
-        "mov w27, #'1'\n"            // '1' = Test 1 failed
+        "mov w27, #'A'\n"            // 'A' = fAiled
         "str w27, [x26]\n"
-        "b test_progressive_enable\n" // Try progressive enable
+        "mov w27, #'I'\n"            // 'I' = faIled
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"            // 'L' = faiLed
+        "str w27, [x26]\n"
+        
+        "b test_progressive_enable\n" // Try progressive/fallback enable
+        
+        "late_success:\n"
+        // MMU enabled after timeout period
+        "mov w27, #'L'\n"            // 'L' = Late success
+        "str w27, [x26]\n"
+        "mov w27, #'A'\n"            // 'A' = lAte
+        "str w27, [x26]\n"
+        "mov w27, #'T'\n"            // 'T' = laTe
+        "str w27, [x26]\n"
+        "mov w27, #'E'\n"            // 'E' = latE
+        "str w27, [x26]\n"
+        
+        "b minimal_mmu_success\n"    // Jump to success path
         
         "minimal_mmu_success:\n"
         // Minimal MMU enable succeeded!
