@@ -30,8 +30,49 @@ _start:
     mov w2, #'S'           // Stack pointer marker
     mov x1, x20            // UART base
     str w2, [x1]           // Print 'S'
-    mov x0, sp             // Pass stack pointer as argument
-    bl uart_puthex         // Print stack pointer value
+    
+    // CRITICAL FIX: Replace uart_puthex call with inline assembly
+    // REASON: uart_puthex is a C function that depends on global variables
+    // (specifically g_uart_base) which may not be properly initialized before
+    // BSS section is zeroed. This violates embedded systems best practices
+    // and can cause undefined behavior on different platforms/bootloaders.
+    
+    // OLD CODE (PROBLEMATIC - calls C before BSS init):
+    // mov x0, sp             // Pass stack pointer as argument
+    // bl uart_puthex         // Print stack pointer value
+    
+    // NEW CODE (SAFE - pure assembly, no global dependencies):
+    mov x10, sp             // Save stack pointer value to print
+    
+    // Print "0x" prefix
+    mov w2, #'0'
+    str w2, [x1]
+    mov w2, #'x'
+    str w2, [x1]
+    
+    // Print 8 hex digits (32-bit address) - start from highest nibble
+    mov x11, #28            // Start at bit 28 (highest nibble of 32-bit value)
+hex_print_loop:
+    mov x9, x10             // Copy value to work with
+    lsr x9, x9, x11         // Shift right to get current nibble
+    and x9, x9, #0xF        // Mask to 4 bits (one hex digit)
+    
+    // Convert nibble to ASCII character
+    cmp x9, #10             // Compare with 10
+    blt hex_digit_0_9       // Branch if 0-9
+    add w9, w9, #('A' - 10) // Convert 10-15 to A-F
+    b hex_print_digit
+hex_digit_0_9:
+    add w9, w9, #'0'        // Convert 0-9 to ASCII
+hex_print_digit:
+    str w9, [x1]            // Output the hex digit to UART
+    
+    // Move to next nibble
+    sub x11, x11, #4        // Move to next 4-bit group
+    cmp x11, #0             // Check if we've done all 8 digits
+    bge hex_print_loop      // Continue if more digits to print
+    
+    // END OF SAFE HEX PRINTING CODE
     
     // UART debug output
     mov x1, x20            // UART base from saved register
@@ -124,6 +165,10 @@ return_label:
     mov w2, #'S'           // Stack pointer marker  
     str w2, [x1]
     uart_delay
+    
+    // NOTE: These uart_puthex calls are SAFE because they occur AFTER BSS initialization
+    // (BSS was zeroed at lines 83-102). The problematic call was the earlier one before BSS init.
+    // C functions can be safely called after BSS is properly initialized.
     mov x0, sp             // Pass stack pointer as argument
     bl uart_puthex         // Print stack pointer value
     mov x1, x20            // Restore UART base after function call

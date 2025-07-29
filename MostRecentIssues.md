@@ -1,5 +1,18 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
+July 29th 2025
+
+Fixed early BSS dependency violation in start.S. Check out line 34-75.
+
+Benefits of This Fix:
+1. Eliminates BSS Dependency Violation: No C functions called before BSS initialization
+2. Maintains Identical Functionality: Still prints "S0x40800000" format
+3. Zero Global Dependencies: Uses only registers and immediate values
+
+Kernel log remains the same after the fix.
+
+Latest kernel log: https://docs.google.com/document/d/1-g-1TRH4TXnBPG7qMkAmbQU5yldJXDIKJYEyyG_YLyw/edit?usp=sharing
+
 July 27th 2025
 
 I added a timeout mechanism that should work like this:
@@ -22,7 +35,6 @@ This confirms the hang is almost certain a hard CPU halt, not an infinite loop, 
 Next steps would likely involve:
 1: Change the cpu model
 2: Try the latest QEMU
-
 
 Latest kernel log(Check out the last line): https://docs.google.com/document/d/10g2wIC9Cj6006UDV5GZkEnE-ULnX7lZQNwPRckBmGAg/edit?usp=sharing
 
