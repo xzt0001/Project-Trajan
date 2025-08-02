@@ -45,42 +45,67 @@ Work will continue toward memory integrity enforcement, syscall verification, co
 
 ## Project Structure
 ```
-CustomOS
+Project 500
 ├── boot/
-│   ├── linker.ld            # Kernel linker script
-│   └── start.S              # Boot assembly code
+│   ├── boot_verify.S           # Boot verification assembly
+│   ├── debug_helpers.S         # Debug helper assembly routines
+│   ├── linker.ld               # Kernel linker script
+│   ├── minimal_test.S          # Minimal boot test
+│   ├── security_enhanced.S     # Security-enhanced boot code
+│   ├── start_simple.S          # Simple start assembly
+│   ├── start.S                 # Boot assembly code
+│   ├── test.S                  # Boot test code
+│   └── vector_setup.S          # Exception vector setup
 ├── kernel/
-│   ├── context.S            # Context switching code
-│   ├── interrupts.c         # Interrupt handling
-│   ├── main.c               # Kernel entry point
-│   ├── scheduler.c          # Task scheduling
-│   ├── serror_debug_handler.S # System error debug handler
-│   ├── string.c             # String manipulation utilities
-│   ├── syscall.c            # System call implementation
-│   ├── task.c               # Task management
-│   ├── timer.c              # System timer implementation
-│   ├── trap.c               # Exception handlers
-│   ├── uart_early.c         # Early boot UART driver
-│   ├── uart_late.c          # Post-MMU UART driver
-│   ├── user.S               # User mode support
-│   ├── user_entry.c         # User task entry points
-│   └── vector.S             # Exception vector table
+│   ├── context.S               # Context switching code
+│   ├── early_trap.S            # Early trap handler
+│   ├── interrupts.c            # Interrupt handling
+│   ├── irq.c                   # IRQ handling
+│   ├── main.c                  # Kernel entry point
+│   ├── minimal_test.c          # Minimal kernel test
+│   ├── scheduler.c             # Task scheduling
+│   ├── serror_debug_handler.S  # System error debug handler
+│   ├── simple_main.c           # Simple kernel main
+│   ├── string.c                # String manipulation utilities
+│   ├── syscall.c               # System call implementation
+│   ├── task.c                  # Task management
+│   ├── test_uart_string.c      # UART string test
+│   ├── timer.c                 # System timer implementation
+│   ├── trap.c                  # Exception handlers
+│   ├── uart.c                  # UART driver
+│   ├── uart_early.c            # Early boot UART driver
+│   ├── uart_globals.c          # UART global state
+│   ├── uart_late.c             # Post-MMU UART driver
+│   ├── uart_legacy.c           # Legacy UART driver
+│   ├── ultra_simple_main.c     # Ultra simple kernel main
+│   ├── user_entry.c            # User task entry points
+│   ├── user_stub.c             # User stub code
+│   ├── user_task.S             # User task assembly
+│   ├── user.S                  # User mode support
+│   └── vector.S                # Exception vector table
 ├── memory/
-│   ├── pmm.c                # Physical memory manager
-│   └── vmm.c                # Virtual memory manager
+│   ├── address_space.c         # Address space management
+│   ├── memory_core.c           # Core memory management
+│   ├── memory_debug.c          # Memory debugging utilities
+│   ├── memory_debug.h          # Memory debug header
+│   ├── pmm.c                   # Physical memory manager
+│   └── vmm.c                   # Virtual memory manager
 ├── include/
-│   ├── debug.h              # Debugging utilities
-│   ├── interrupts.h         # Interrupt declarations
-│   ├── kernel.h             # Kernel-wide definitions
-│   ├── pmm.h                # Physical memory declarations
-│   ├── scheduler.h          # Scheduler declarations
-│   ├── string.h             # String utilities
-│   ├── syscall.h            # System call definitions
-│   ├── task.h               # Task management declarations
-│   ├── timer.h              # Timer declarations
-│   ├── types.h              # Common type definitions
-│   ├── uart.h               # UART driver interface
-│   └── vmm.h                # Virtual memory declarations
+│   ├── address_space.h         # Address space declarations
+│   ├── debug.h                 # Debugging utilities
+│   ├── interrupts.h            # Interrupt declarations
+│   ├── kernel.h                # Kernel-wide definitions
+│   ├── memory_config.h         # Memory configuration
+│   ├── memory_core.h           # Core memory management declarations
+│   ├── pmm.h                   # Physical memory declarations
+│   ├── scheduler.h             # Scheduler declarations
+│   ├── string.h                # String utilities
+│   ├── syscall.h               # System call definitions
+│   ├── task.h                  # Task management declarations
+│   ├── timer.h                 # Timer declarations
+│   ├── types.h                 # Common type definitions
+│   ├── uart.h                  # UART driver interface
+│   └── vmm.h                   # Virtual memory declarations
 └── scripts/
     ├── run_debug.sh         # Run with GDB debugging
     ├── run_gui_mode.sh      # Run with QEMU GUI
