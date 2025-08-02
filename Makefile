@@ -14,6 +14,10 @@ ASFLAGS := -g
 # Include all the necessary files for a full kernel
 OBJS := boot/start.o \
         boot/test.o \
+        boot/debug_helpers.o \
+        boot/security_enhanced.o \
+        boot/vector_setup.o \
+        boot/boot_verify.o \
         kernel/main.o \
         kernel/uart_early.o \
         kernel/uart_late.o \
@@ -46,6 +50,7 @@ all: build/kernel8.img
 clean:
 	rm -rf build/*
 	rm -f $(OBJS)
+	rm -f boot/*.o kernel/*.o memory/*.o
 
 build/kernel.elf: $(OBJS) boot/linker.ld | build
 	$(LD) -T boot/linker.ld -o build/kernel.elf $(OBJS)
@@ -63,6 +68,18 @@ boot/start.o: boot/start.S
 
 boot/test.o: boot/test.S
 	$(AS) $(ASFLAGS) boot/test.S -o boot/test.o
+
+boot/debug_helpers.o: boot/debug_helpers.S
+	$(AS) $(ASFLAGS) boot/debug_helpers.S -o boot/debug_helpers.o
+
+boot/security_enhanced.o: boot/security_enhanced.S
+	$(AS) $(ASFLAGS) boot/security_enhanced.S -o boot/security_enhanced.o
+
+boot/vector_setup.o: boot/vector_setup.S
+	$(AS) $(ASFLAGS) boot/vector_setup.S -o boot/vector_setup.o
+
+boot/boot_verify.o: boot/boot_verify.S
+	$(AS) $(ASFLAGS) boot/boot_verify.S -o boot/boot_verify.o
 
 kernel/context.o: kernel/context.S
 	$(AS) $(ASFLAGS) kernel/context.S -o kernel/context.o

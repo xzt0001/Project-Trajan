@@ -32,4 +32,6 @@ test_uart_directly:
 
     // Restore link register and return
     ldp x29, x30, [sp], #16
-    ret 
+    ret
+
+// End of test.S 
