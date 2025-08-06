@@ -1,5 +1,5 @@
-#include "../include/types.h"
-#include "../include/uart.h"
+#include "../../../include/types.h"
+#include "../../../include/uart.h"
 
 // Explicitly reference the global UART base pointer defined in uart.c
 extern volatile uint32_t* g_uart_base;

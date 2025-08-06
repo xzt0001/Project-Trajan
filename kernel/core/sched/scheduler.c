@@ -1,8 +1,8 @@
-#include "../include/scheduler.h"
-#include "../include/task.h"
-#include "../include/uart.h"
-#include "../include/pmm.h"  // Add include for memory allocation
-#include "../include/debug.h"  // Include new debug header
+#include "../../../include/scheduler.h"
+#include "../../../include/task.h"
+#include "../../../include/uart.h"
+#include "../../../include/pmm.h"  // Add include for memory allocation
+#include "../../../include/debug.h"  // Include new debug header
 
 // Add include for debug_print
 extern void debug_print(const char* msg);

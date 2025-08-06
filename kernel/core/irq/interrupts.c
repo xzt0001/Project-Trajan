@@ -1,6 +1,6 @@
-#include "../include/interrupts.h"
-#include "../include/scheduler.h"
-#include "../include/uart.h"
+#include "../../../include/interrupts.h"
+#include "../../../include/scheduler.h"
+#include "../../../include/uart.h"
 
 // Add include for debug_print
 extern void debug_print(const char* msg);

@@ -30,14 +30,48 @@ _start:
     // Save UART address in callee-saved register
     mov x20, #0x09000000    // x20 = UART base (preserved across function calls)
     
+    // ============================================
+    // UART Hardware Initialization (CRITICAL!)
+    // Must happen before ANY debug output
+    // ============================================
+    
+    // Initialize UART hardware registers for PL011
+    mov x1, x20                  // UART base address
+    
+    // Disable UART during setup (UARTCR = 0)
+    mov w2, #0
+    str w2, [x1, #0x30]         // UARTCR offset = 0x30
+    
+    // Set baud rate divisor (simple setup for debug)
+    mov w2, #26                  // IBRD for 115200 baud @ 4MHz (rough)
+    str w2, [x1, #0x24]         // UARTIBRD offset = 0x24
+    mov w2, #3                   // FBRD 
+    str w2, [x1, #0x28]         // UARTFBRD offset = 0x28
+    
+    // Set line control: 8N1 (8 bits, no parity, 1 stop bit)
+    mov w2, #0x70               // WLEN=11 (8 bits), FEN=1 (FIFO enable)
+    str w2, [x1, #0x2C]         // UARTLCR_H offset = 0x2C
+    
+    // Enable UART: TXE=1, RXE=1, UARTEN=1
+    mov w2, #0x301              // Enable UART + TX + RX
+    str w2, [x1, #0x30]         // UARTCR offset = 0x30
+    
+    // Wait a bit for UART to stabilize
+    mov x15, #0x10000
+uart_init_delay:
+    subs x15, x15, #1
+    bne uart_init_delay
+    
+    // ============================================
     // Stack setup - use a high address 
     mov x0, #0x40800000     // Set SP to 1GB + 8MB mark
     mov sp, x0              // Set stack pointer
     
+    // NOW we can safely output debug characters
     // Print stack pointer value for debugging
     mov w2, #'S'           // Stack pointer marker
     mov x1, x20            // UART base
-    str w2, [x1]           // Print 'S'
+    str w2, [x1]           // Print 'S' - should work now!
     
     // CRITICAL FIX: Replace uart_puthex call with inline assembly
     // REASON: uart_puthex is a C function that depends on global variables
@@ -55,8 +89,10 @@ _start:
     // Print "0x" prefix
     mov w2, #'0'
     str w2, [x1]
+    uart_delay
     mov w2, #'x'
     str w2, [x1]
+    uart_delay
     
     // Print 8 hex digits (32-bit address) - start from highest nibble
     mov x11, #28            // Start at bit 28 (highest nibble of 32-bit value)
@@ -74,6 +110,7 @@ hex_digit_0_9:
     add w9, w9, #'0'        // Convert 0-9 to ASCII
 hex_print_digit:
     str w9, [x1]            // Output the hex digit to UART
+    uart_delay              // Add delay between hex digits
     
     // Move to next nibble
     sub x11, x11, #4        // Move to next 4-bit group

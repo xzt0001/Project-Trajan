@@ -1,5 +1,5 @@
-#include "../include/types.h"
-#include "../include/uart.h"
+#include "../../../include/types.h"
+#include "../../../include/uart.h"
 
 // Global variable for UART base address (can be updated at runtime)
 // This is used by all UART functions across the codebase

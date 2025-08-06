@@ -1,5 +1,5 @@
-#include "../include/syscall.h"
-#include "../include/uart.h"  // for uart_puts() and uart_hex64()
+#include "../../../include/syscall.h"
+#include "../../../include/uart.h"  // for uart_puts() and uart_hex64()
 
 // Debug helper function to display a clear syscall boundary
 void syscall_debug_marker(void) {

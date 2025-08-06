@@ -1,8 +1,8 @@
-#include "../include/task.h"
-#include "../include/pmm.h"
-#include "../include/string.h"
-#include "../include/types.h" // For uint64_t and other types
-#include "../include/uart.h"  // For uart_puts
+#include "../../../include/task.h"
+#include "../../../include/pmm.h"
+#include "../../../include/string.h"
+#include "../../../include/types.h" // For uint64_t and other types
+#include "../../../include/uart.h"  // For uart_puts
 
 // External function declarations
 extern void full_restore_context(task_t* task);

@@ -1,7 +1,7 @@
-#include "../include/interrupts.h"
-#include "../include/scheduler.h"
-#include "../include/uart.h"
-#include "../include/timer.h"
+#include "../../../include/interrupts.h"
+#include "../../../include/scheduler.h"
+#include "../../../include/uart.h"
+#include "../../../include/timer.h"
 
 // Add debug print declaration
 extern void debug_print(const char* msg);

@@ -1,6 +1,6 @@
-#include "../include/timer.h"
-#include "../include/types.h"
-#include "../include/uart.h"
+#include "../../../include/timer.h"
+#include "../../../include/types.h"
+#include "../../../include/uart.h"
 
 // Add include for debug_print
 extern void debug_print(const char* msg);

@@ -1,6 +1,6 @@
-#include "../include/types.h"
-#include "../include/uart.h"
-#include "../include/vmm.h"
+#include "../../../include/types.h"
+#include "../../../include/uart.h"
+#include "../../../include/vmm.h"
 
 // Global MMU state flag - Now imported from vmm.c
 // static int mmu_enabled = 0; - Removed as it's now defined in vmm.c
@@ -347,7 +347,7 @@ void uart_hex64_early(uint64_t value) {
 void uart_set_base(void* addr) {
     // Debug output before changing the address
     uart_puts_early("[UART] Switching base address from 0x");
-    uart_hex64_early(g_uart_base);
+    uart_hex64_early((uint64_t)g_uart_base);
     uart_puts_early(" to 0x");
     uart_hex64_early((uint64_t)addr);
     uart_puts_early("\n");
@@ -418,4 +418,19 @@ void uart_panic(const char* str) {
     while (1) {
         // Infinite loop
     }
+}
+
+// Initial UART setup - only used early in boot
+void uart_init_early(unsigned long uart_addr) {
+    // Simple test to confirm UART is working
+    uart_putc_early('E'); // E for Early
+    uart_putc_early('A'); // A for Access
+    uart_putc_early('R'); // R for Ready
+    uart_putc_early('L'); // L for Load
+    uart_putc_early('Y'); // Y for Yes
+    uart_putc_early(':'); // : separator
+    uart_putc_early('O'); // O for OK
+    uart_putc_early('K'); // K for K
+    uart_putc_early('\r');
+    uart_putc_early('\n');
 }

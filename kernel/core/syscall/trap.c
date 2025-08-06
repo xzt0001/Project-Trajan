@@ -1,7 +1,7 @@
 // kernel/trap.c
-#include "../include/uart.h"
-#include "../include/types.h"
-#include "../include/syscall.h"  // Include syscall header
+#include "../../../include/uart.h"
+#include "../../../include/types.h"
+#include "../../../include/syscall.h"  // Include syscall header
 
 // Export symbols for vector table
 void sync_el0_handler(void) __attribute__((used, externally_visible));

@@ -1,5 +1,5 @@
-#include "../include/uart.h"
-#include "../include/types.h"
+#include "../../include/uart.h"
+#include "../../include/types.h"
 
 // This file contains test functions for UART string output validation
 

@@ -6,6 +6,9 @@
 // Enhanced debug functions for post-BSS boot phases
 // These functions can safely call C functions since BSS has been initialized
 
+// Include debug configuration
+#include "../include/debug_config.h"
+
 // UART delay macro (replicated from start.S for module independence)
 .macro uart_delay
     mov x15, #0x8000        // Doubled delay for better UART reliability
@@ -85,10 +88,12 @@ debug_pmm_status:
     str w2, [x19]
     uart_delay
     
-    // Continue with debug output
+    // Continue with debug output - configurable
+#ifdef DEBUG_MARKERS_EXTRA_ENABLED
     mov w2, #'P'           // PMM init complete
     str w2, [x19]
     uart_delay
+#endif
     
     // CRITICAL SECTION - about to call init_vmm()
     // Verify current state

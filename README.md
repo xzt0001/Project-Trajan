@@ -56,33 +56,46 @@ Project 500
 │   ├── start.S                 # Boot assembly code
 │   ├── test.S                  # Boot test code
 │   └── vector_setup.S          # Exception vector setup
-├── kernel/
-│   ├── context.S               # Context switching code
-│   ├── early_trap.S            # Early trap handler
-│   ├── interrupts.c            # Interrupt handling
-│   ├── irq.c                   # IRQ handling
-│   ├── main.c                  # Kernel entry point
-│   ├── minimal_test.c          # Minimal kernel test
-│   ├── scheduler.c             # Task scheduling
-│   ├── serror_debug_handler.S  # System error debug handler
-│   ├── simple_main.c           # Simple kernel main
-│   ├── string.c                # String manipulation utilities
-│   ├── syscall.c               # System call implementation
-│   ├── task.c                  # Task management
-│   ├── test_uart_string.c      # UART string test
-│   ├── timer.c                 # System timer implementation
-│   ├── trap.c                  # Exception handlers
-│   ├── uart.c                  # UART driver
-│   ├── uart_early.c            # Early boot UART driver
-│   ├── uart_globals.c          # UART global state
-│   ├── uart_late.c             # Post-MMU UART driver
-│   ├── uart_legacy.c           # Legacy UART driver
-│   ├── ultra_simple_main.c     # Ultra simple kernel main
-│   ├── user_entry.c            # User task entry points
-│   ├── user_stub.c             # User stub code
-│   ├── user_task.S             # User task assembly
-│   ├── user.S                  # User mode support
-│   └── vector.S                # Exception vector table
+├── kernel/                     # Modular ARM64 kernel (reorganized August 2025)
+│   ├── arch/arm64/             # Architecture-specific ARM64 code
+│   │   ├── boot/               # Early boot and low-level initialization
+│   │   │   ├── vector.S        # Exception vector table
+│   │   │   ├── early_trap.S    # Early trap handling
+│   │   │   └── main_asm.S      # Assembly kernel entry (excluded)
+│   │   ├── kernel/             # Core ARM64 kernel operations
+│   │   │   ├── context.S       # Context switching
+│   │   │   ├── user.S          # User space transitions
+│   │   │   ├── user_task.S     # User task management
+│   │   │   └── serror_debug_handler.S # Error handling
+│   │   └── lib/                # ARM64-optimized utilities
+│   │       └── string.c        # String operations
+│   ├── core/                   # Architecture-independent kernel core
+│   │   ├── sched/              # Process scheduling
+│   │   │   └── scheduler.c     # Main scheduler implementation
+│   │   ├── syscall/            # System call handling
+│   │   │   ├── syscall.c       # System call dispatcher
+│   │   │   └── trap.c          # Trap handling
+│   │   ├── irq/                # Interrupt handling
+│   │   │   ├── interrupts.c    # Interrupt management
+│   │   │   └── irq.c           # IRQ processing
+│   │   └── task/               # Task management
+│   │       ├── task.c          # Task creation/management
+│   │       ├── user_entry.c    # User space entry points
+│   │       └── user_stub.c     # User space stubs
+│   ├── drivers/                # Device drivers
+│   │   ├── uart/               # UART serial communication
+│   │   │   ├── uart_core.c     # Core UART functionality
+│   │   │   ├── uart_late.c     # Late-stage UART operations
+│   │   │   └── uart_globals.c  # UART global variables
+│   │   └── timer/              # Timer/clock drivers
+│   │       └── timer.c         # Timer implementation
+│   ├── init/                   # Kernel initialization
+│   │   └── main.c              # Main kernel entry point
+│   └── debug/                  # Debug and testing utilities
+│       ├── test_uart_string.c  # UART string test
+│       ├── simple_main.c       # Simple kernel main
+│       ├── ultra_simple_main.c # Ultra simple kernel main
+│       └── minimal_test.c      # Minimal kernel test
 ├── memory/
 │   ├── address_space.c         # Address space management
 │   ├── memory_core.c           # Core memory management

@@ -1,5 +1,5 @@
-#include "../include/types.h"
-#include "../include/uart.h"
+#include "../../../include/types.h"
+#include "../../../include/uart.h"
 
 // Physical UART base address - hardcoded for early boot
 #define UART_PHYS 0x09000000

@@ -1,6 +1,6 @@
-#include "../include/types.h"
-#include "../include/uart.h"
-#include "../include/vmm.h"
+#include "../../../include/types.h"
+#include "../../../include/uart.h"
+#include "../../../include/vmm.h"
 
 // This file provides compatibility wrappers for legacy code that 
 // uses the old UART functions. These will be phased out gradually.

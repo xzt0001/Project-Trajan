@@ -1,13 +1,13 @@
-#include "../include/uart.h"
-#include "../include/task.h"
-#include "../include/pmm.h"
-#include "../include/vmm.h"
-#include "../include/address_space.h"
-#include "../include/scheduler.h"
-#include "../include/timer.h"
-#include "../include/types.h"
-#include "../include/interrupts.h"
-#include "../include/string.h"  // Add string.h for memset
+#include "../../include/uart.h"
+#include "../../include/task.h"
+#include "../../include/pmm.h"
+#include "../../include/vmm.h"
+#include "../../include/address_space.h"
+#include "../../include/scheduler.h"
+#include "../../include/timer.h"
+#include "../../include/types.h"
+#include "../../include/interrupts.h"
+#include "../../include/string.h"  // Add string.h for memset
 
 // Add the test_context_switch declaration
 extern void test_context_switch(void);

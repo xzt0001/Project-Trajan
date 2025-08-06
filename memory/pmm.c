@@ -5,6 +5,7 @@
 #include "../include/vmm.h"
 #include "../include/memory_config.h"
 #include "../include/debug.h"
+#include "../include/debug_config.h"
 
 // Declaration for debug_hex64 function from kernel/main.c
 extern void debug_hex64(const char* label, uint64_t value);
@@ -101,16 +102,57 @@ static int is_page_used(uint64_t addr) {
     return (page_bitmap[byte_idx] & (1 << bit_idx)) != 0;
 }
 
-// Barebones ASM function that returns
-// Note: 'naked' attribute may be ignored by some compilers, but the inline assembly still works
+// Enhanced test function with configurable debug patterns
+// Outputs: A[configurable test patterns]B based on debug_config.h settings
 __attribute__((naked)) void test_return(void) {
     asm volatile(
+        // Save registers for C function calls
+        "stp x0, x1, [sp, #-16]!\n"
+        "stp x2, x3, [sp, #-16]!\n"
+        "stp x30, x29, [sp, #-16]!\n"
+        
         "mov x9, #0x09000000\n"    // UART address in x9
+        
+        // Print 'A' marker (always present)
         "mov w10, #65\n"           // ASCII 'A'
         "str w10, [x9]\n"          // Write 'A' to UART
-        "ret\n"                    // Explicit return instruction
+        
+#ifdef DEBUG_TEST_PATTERNS_ENABLED
+        // === VERBOSE MODE: Output all test patterns ===
+        
+        // Call uart_hex64_early for each pattern
+        "mov x0, #0xCAFE\n"
+        "movk x0, #0xBABE, lsl #16\n"  
+        "movk x0, #0xDEAD, lsl #32\n"
+        "movk x0, #0xBEEF, lsl #48\n"
+        "bl uart_hex64_early\n"     // Pattern 1, instance 1
+        "bl uart_hex64_early\n"     // Pattern 1, instance 2
+        
+        "mov x0, #0x0123\n"
+        "movk x0, #0x4567, lsl #16\n"
+        "movk x0, #0x89AB, lsl #32\n" 
+        "movk x0, #0xCDEF, lsl #48\n"
+        "bl uart_hex64_early\n"     // Pattern 2, instance 1
+        "bl uart_hex64_early\n"     // Pattern 2, instance 2
+        
+        "mov x0, #0xFEDC\n"
+        "movk x0, #0xBA98, lsl #16\n"
+        "movk x0, #0x7654, lsl #32\n"
+        "movk x0, #0x3210, lsl #48\n"
+        "bl uart_hex64_early\n"     // Pattern 3, instance 1  
+        "bl uart_hex64_early\n"     // Pattern 3, instance 2
+        
+        // Print 'B' end marker in verbose mode
+        "mov w10, #66\n"            // ASCII 'B'
+        "str w10, [x9]\n"           // Write 'B' to UART
+#endif
+        
+        // Restore registers and return
+        "ldp x30, x29, [sp], #16\n"
+        "ldp x2, x3, [sp], #16\n"
+        "ldp x0, x1, [sp], #16\n"
+        "ret\n"
     );
-    // No C code here - naked function
 }
 
 // Normal C implementation that will be called from our assembly wrapper

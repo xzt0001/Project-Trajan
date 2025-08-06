@@ -5,6 +5,9 @@
 // Boot state verification and system integrity checking
 // Migrated verification code with enhanced security checks
 
+// Include debug configuration
+#include "../include/debug_config.h"
+
 // UART delay macro
 .macro uart_delay
     mov x15, #0x8000        
@@ -106,10 +109,15 @@ stack_range_error:
     uart_delay
 
 boot_verify_complete:
-    // Boot state verification complete
+    // Boot state verification complete - configurable output
+#ifdef DEBUG_MARKERS_CD_ENABLED
     mov w2, #'C'           // Complete
     str w2, [x19]
     uart_delay
+    mov w2, #'D'           // Debug marker
+    str w2, [x19]
+    uart_delay
+#endif
     
     // Restore registers and return
     ldp x23, x24, [sp, #32]

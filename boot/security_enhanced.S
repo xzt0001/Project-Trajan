@@ -27,12 +27,16 @@ security_feature_init:
     // Security initialization marker
     mov w2, #'<'           // Security start marker
     str w2, [x19]
+    uart_delay
     mov w2, #'S'           // Security  
     str w2, [x19]
+    uart_delay
     mov w2, #'E'           // Enhanced
     str w2, [x19]
+    uart_delay
     mov w2, #'C'           // Core
     str w2, [x19]
+    uart_delay
     mov w2, #'>'           // End marker
     str w2, [x19]
     uart_delay
