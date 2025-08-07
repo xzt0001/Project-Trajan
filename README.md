@@ -1,4 +1,4 @@
-# Project 500: A Minimal ARM64 Kernel
+# Project-Trajan: A Minimal ARM64 Kernel
 
 A clean, minimal operating system kernel written from scratch for AArch64 (ARMv8-A) using QEMU.  
 Includes UART logging, stack setup, physical memory management, virtual memory mapping, MMU activation, context switching, and exception handling.
@@ -45,7 +45,7 @@ Work will continue toward memory integrity enforcement, syscall verification, co
 
 ## Project Structure
 ```
-Project 500
+Project-Trajan
 ├── boot/
 │   ├── boot_verify.S           # Boot verification assembly
 │   ├── debug_helpers.S         # Debug helper assembly routines
