@@ -4,7 +4,7 @@ A clean, minimal operating system kernel written from scratch for AArch64 (ARMv8
 Includes UART logging, stack setup, physical memory management, virtual memory mapping, MMU activation, context switching, and exception handling.
 
 
-**Current Status: This project is currently in its foundational development stage. The Philosophy.md document establishes the intellectual framework and long-term vision, while the current codebase builds the essential technical infrastructure needed to eventually demonstrate these concepts.
+**Current Status: This project is currently in its foundational development stage. 
 
 **Researchers interested in adversarial OS design, trust boundaries, or system subversion are invited to initiate technical dialogue or collaboration.
 
