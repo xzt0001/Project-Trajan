@@ -90,6 +90,28 @@ Project-Trajan
 │   │   └── timer/              # Timer/clock drivers
 │   │       └── timer.c         # Timer implementation
 │   ├── init/                   # Kernel initialization
+│   │   ├── arch/               # Architecture-related init helpers
+│   │   │   ├── vector_ops.c    # Exception vector setup helpers
+│   │   │   └── vbar_ops.c      # VBAR configuration helpers
+│   │   ├── console/            # Early console setup
+│   │   │   └── early_console.c
+│   │   ├── core/               # Core init utilities
+│   │   │   └── panic.c         # Panic & fatal error handling
+│   │   ├── include/            # Init-time public headers
+│   │   │   ├── arch_ops.h
+│   │   │   ├── console_api.h
+│   │   │   ├── memory_debug.h
+│   │   │   ├── panic.h
+│   │   │   ├── sample_tasks.h
+│   │   │   └── selftest.h
+│   │   ├── memory/             # Memory init & debug
+│   │   │   └── debug_ptdump.c
+│   │   ├── samples/            # Demo workloads used during bring-up
+│   │   │   └── demo_tasks.c
+│   │   ├── selftest/           # Built-in self tests
+│   │   │   ├── exception_tests.c
+│   │   │   ├── scheduler_tests.c
+│   │   │   └── uart_tests.c
 │   │   └── main.c              # Main kernel entry point
 │   └── debug/                  # Debug and testing utilities
 │       ├── test_uart_string.c  # UART string test

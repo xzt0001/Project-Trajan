@@ -1,18 +1,6 @@
 ***This document records major architectural decisions made in the development of this OS. The purpose is: Document the reasoning, context, and tradeoffs behind critical changes, including past and future, as project evolves.
 
-July 11th 2025
-
-vmm.c refactoring plan: vmm.c to a modular memory subsystem
-
-memory/
-├── pmm.c              // Physical Memory Manager
-├── vmm.c              // Virtual Memory Manager (MMU-dependent)
-├── memory_core.c      // Common utilities & hardware access
-├── address_space.c    // Addressing abstraction layer
-├── memory_config.h    // Runtime configuration switches
-└── memory_debug.c     // Debugging & verification tools
-
-August 6th, 2025
+August 10th 2025
 
 Kernel Folder Reorganization:
 
@@ -51,6 +39,28 @@ kernel/
 │   └── timer/           // Timer/clock drivers
 │       └── timer.c      // Timer implementation
 ├── init/                // Kernel initialization
+│   ├── arch/            // Architecture-related init helpers
+│   │   ├── vector_ops.c // Exception vector setup helpers
+│   │   └── vbar_ops.c   // VBAR configuration helpers
+│   ├── console/         // Early console setup
+│   │   └── early_console.c
+│   ├── core/            // Core init utilities
+│   │   └── panic.c      // Panic & fatal error handling
+│   ├── include/         // Init-time public headers
+│   │   ├── arch_ops.h
+│   │   ├── console_api.h
+│   │   ├── memory_debug.h
+│   │   ├── panic.h
+│   │   ├── sample_tasks.h
+│   │   └── selftest.h
+│   ├── memory/          // Memory init & debug
+│   │   └── debug_ptdump.c
+│   ├── samples/         // Demo workloads used during bring-up
+│   │   └── demo_tasks.c
+│   ├── selftest/        // Built-in self tests
+│   │   ├── exception_tests.c
+│   │   ├── scheduler_tests.c
+│   │   └── uart_tests.c
 │   └── main.c           // Main kernel entry point
 ├── lib/                 // Kernel utility libraries
 └── debug/               // Debug and testing utilities
@@ -60,3 +70,14 @@ kernel/
     └── minimal_test.c
 
 
+July 11th 2025
+
+vmm.c refactoring plan: vmm.c to a modular memory subsystem
+
+memory/
+├── pmm.c              // Physical Memory Manager
+├── vmm.c              // Virtual Memory Manager (MMU-dependent)
+├── memory_core.c      // Common utilities & hardware access
+├── address_space.c    // Addressing abstraction layer
+├── memory_config.h    // Runtime configuration switches
+└── memory_debug.c     // Debugging & verification tools
