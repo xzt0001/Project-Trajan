@@ -1,1 +1,0 @@
-The philosophy document has been temporarily archived as a form of tactical repositioning. The philosophical framework itself would remain active behind the scene. For serious interest in the philosophical dimentions, I remain open to private dialogue.

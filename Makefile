@@ -57,7 +57,16 @@ DRIVERS_UART_OBJS := kernel/drivers/uart/uart_core.o \
 
 DRIVERS_TIMER_OBJS := kernel/drivers/timer/timer.o
 
-INIT_OBJS := kernel/init/main.o
+INIT_OBJS := kernel/init/main.o \
+             kernel/init/core/panic.o \
+             kernel/init/console/early_console.o \
+             kernel/init/memory/debug_ptdump.o \
+             kernel/init/arch/vbar_ops.o \
+             kernel/init/arch/vector_ops.o \
+             kernel/init/samples/demo_tasks.o \
+             kernel/init/selftest/exception_tests.o \
+             kernel/init/selftest/uart_tests.o \
+             kernel/init/selftest/scheduler_tests.o
 
 MEMORY_OBJS := memory/pmm.o \
                memory/vmm.o \
@@ -104,7 +113,7 @@ clean:
 	rm -f $(OBJS)
 	rm -f boot/*.o kernel/arch/arm64/boot/*.o kernel/arch/arm64/kernel/*.o kernel/arch/arm64/lib/*.o
 	rm -f kernel/core/sched/*.o kernel/core/syscall/*.o kernel/core/irq/*.o kernel/core/task/*.o
-	rm -f kernel/drivers/uart/*.o kernel/drivers/timer/*.o kernel/init/*.o memory/*.o
+	rm -f kernel/drivers/uart/*.o kernel/drivers/timer/*.o kernel/init/*.o kernel/init/core/*.o kernel/init/console/*.o kernel/init/memory/*.o kernel/init/arch/*.o kernel/init/samples/*.o kernel/init/selftest/*.o memory/*.o
 
 build/kernel.elf: $(OBJS) boot/linker.ld | build
 	$(LD) -T boot/linker.ld -o build/kernel.elf $(OBJS)
@@ -210,6 +219,33 @@ kernel/drivers/timer/timer.o: kernel/drivers/timer/timer.c
 # ========== INIT FILES ==========
 kernel/init/main.o: kernel/init/main.c
 	$(CC) $(CFLAGS) -c kernel/init/main.c -o kernel/init/main.o
+
+kernel/init/core/panic.o: kernel/init/core/panic.c
+	$(CC) $(CFLAGS) -c kernel/init/core/panic.c -o kernel/init/core/panic.o
+
+kernel/init/console/early_console.o: kernel/init/console/early_console.c
+	$(CC) $(CFLAGS) -c kernel/init/console/early_console.c -o kernel/init/console/early_console.o
+
+kernel/init/memory/debug_ptdump.o: kernel/init/memory/debug_ptdump.c
+	$(CC) $(CFLAGS) -c kernel/init/memory/debug_ptdump.c -o kernel/init/memory/debug_ptdump.o
+
+kernel/init/arch/vbar_ops.o: kernel/init/arch/vbar_ops.c
+	$(CC) $(CFLAGS) -c kernel/init/arch/vbar_ops.c -o kernel/init/arch/vbar_ops.o
+
+kernel/init/arch/vector_ops.o: kernel/init/arch/vector_ops.c
+	$(CC) $(CFLAGS) -c kernel/init/arch/vector_ops.c -o kernel/init/arch/vector_ops.o
+
+kernel/init/samples/demo_tasks.o: kernel/init/samples/demo_tasks.c
+	$(CC) $(CFLAGS) -c kernel/init/samples/demo_tasks.c -o kernel/init/samples/demo_tasks.o
+
+kernel/init/selftest/exception_tests.o: kernel/init/selftest/exception_tests.c
+	$(CC) $(CFLAGS) -c kernel/init/selftest/exception_tests.c -o kernel/init/selftest/exception_tests.o
+
+kernel/init/selftest/uart_tests.o: kernel/init/selftest/uart_tests.c
+	$(CC) $(CFLAGS) -c kernel/init/selftest/uart_tests.c -o kernel/init/selftest/uart_tests.o
+
+kernel/init/selftest/scheduler_tests.o: kernel/init/selftest/scheduler_tests.c
+	$(CC) $(CFLAGS) -c kernel/init/selftest/scheduler_tests.c -o kernel/init/selftest/scheduler_tests.o
 
 # ========== MEMORY MANAGEMENT FILES ==========
 memory/pmm.o: memory/pmm.c

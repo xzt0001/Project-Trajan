@@ -6,10 +6,8 @@ Includes UART logging, stack setup, physical memory management, virtual memory m
 
 **Current Status: This project is currently in its foundational development stage. 
 
-**Researchers interested in adversarial OS design, trust boundaries, or system subversion are invited to initiate technical dialogue or collaboration.
 
-
-For debugging blogs, Q&A, please visit: https://medium.com/@xzt0202 
+**Researchers interested in OS design, trust boundaries are invited to initiate technical dialogue or collaboration.
 
 
 Future Roadmap(generalized version):
@@ -30,7 +28,6 @@ Phase 6: Networking and Basic Security
 	•	Prepare infrastructure for multi-process and remote interactions.
 
 
-Research Platform Expansion(The content of this section is temporarily unavailable)
 
 
 Long-Term Vision
