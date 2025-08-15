@@ -801,7 +801,8 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         
         // Verify DAIF (exception mask) state
         "mrs x28, daif\n"            // Get interrupt masks
-        "and x28, x28, #0xF\n"       // Mask to DAIF bits
+        "lsr x28, x28, #6\n"         // Shift DAIF bits [9:6] to [3:0]
+        "and x28, x28, #0xF\n"       // Mask to get 4 DAIF bits
         
         // Verify stack pointer alignment
         "mov x28, sp\n"              // Get current stack pointer
@@ -879,24 +880,31 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "str w27, [x26]\n"
         "mrs x28, daif\n"            // Get interrupt mask state
         
-        // Show key interrupt bits: D(3), A(2), I(1), F(0)
-        "and x29, x28, #0x8\n"       // Extract D bit (debug exceptions)
-        "lsr x29, x29, #3\n"         // Shift to bit 0
-        "add w27, w29, #'0'\n"       // Convert to ASCII
+        // Show key interrupt bits: D(9), A(8), I(7), F(6) - CORRECTED bit positions
+        "lsr x29, x28, #6\n"         // Shift DAIF bits [9:6] to [3:0]
+        "and x29, x29, #0xF\n"       // Mask to get 4 DAIF bits
+        
+        // Extract D bit (bit 3 of shifted value = original bit 9)
+        "and x30, x29, #0x8\n"       // Extract D bit (debug exceptions)
+        "lsr x30, x30, #3\n"         // Shift to bit 0
+        "add w27, w30, #'0'\n"       // Convert to ASCII
         "str w27, [x26]\n"
         
-        "and x29, x28, #0x4\n"       // Extract A bit (async aborts)
-        "lsr x29, x29, #2\n"         // Shift to bit 0
-        "add w27, w29, #'0'\n"       // Convert to ASCII
+        // Extract A bit (bit 2 of shifted value = original bit 8)
+        "and x30, x29, #0x4\n"       // Extract A bit (async aborts)
+        "lsr x30, x30, #2\n"         // Shift to bit 0
+        "add w27, w30, #'0'\n"       // Convert to ASCII
         "str w27, [x26]\n"
         
-        "and x29, x28, #0x2\n"       // Extract I bit (IRQ)
-        "lsr x29, x29, #1\n"         // Shift to bit 0
-        "add w27, w29, #'0'\n"       // Convert to ASCII
+        // Extract I bit (bit 1 of shifted value = original bit 7)
+        "and x30, x29, #0x2\n"       // Extract I bit (IRQ)
+        "lsr x30, x30, #1\n"         // Shift to bit 0
+        "add w27, w30, #'0'\n"       // Convert to ASCII
         "str w27, [x26]\n"
         
-        "and x29, x28, #0x1\n"       // Extract F bit (FIQ)
-        "add w27, w29, #'0'\n"       // Convert to ASCII
+        // Extract F bit (bit 0 of shifted value = original bit 6)
+        "and x30, x29, #0x1\n"       // Extract F bit (FIQ)
+        "add w27, w30, #'0'\n"       // Convert to ASCII
         "str w27, [x26]\n"
         
         // STEP 4A: **MINIMAL SCTLR_EL1 CONFIGURATION TEST** (Option 4A)
@@ -974,31 +982,35 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #':'\n"
         "str w27, [x26]\n"
         
-        // Output D bit (bit 3 of DAIF)
-        "and x30, x29, #0x8\n"       // Extract D bit (position 3)
+        // CORRECTED: Shift DAIF bits [9:6] to [3:0] first
+        "lsr x28, x29, #6\n"         // Shift DAIF bits [9:6] to [3:0]
+        "and x28, x28, #0xF\n"       // Mask to get 4 DAIF bits
+        
+        // Output D bit (bit 3 of shifted value = original bit 9)
+        "and x30, x28, #0x8\n"       // Extract D bit (debug exceptions)
         "lsr x30, x30, #3\n"         // Shift to position 0
         "add w27, w30, #'0'\n"       // Convert to ASCII
         "str w27, [x26]\n"           // Output D bit (should be '1' if disabled)
         
-        // Output A bit (bit 2 of DAIF)
-        "and x30, x29, #0x4\n"       // Extract A bit (position 2)
+        // Output A bit (bit 2 of shifted value = original bit 8)
+        "and x30, x28, #0x4\n"       // Extract A bit (async aborts)
         "lsr x30, x30, #2\n"         // Shift to position 0
         "add w27, w30, #'0'\n"       // Convert to ASCII
         "str w27, [x26]\n"           // Output A bit (should be '1' if disabled)
         
-        // Output I bit (bit 1 of DAIF)
-        "and x30, x29, #0x2\n"       // Extract I bit (position 1)
+        // Output I bit (bit 1 of shifted value = original bit 7)
+        "and x30, x28, #0x2\n"       // Extract I bit (IRQ)
         "lsr x30, x30, #1\n"         // Shift to position 0
         "add w27, w30, #'0'\n"       // Convert to ASCII
         "str w27, [x26]\n"           // Output I bit (should be '1' if disabled)
         
-        // Output F bit (bit 0 of DAIF)
-        "and x30, x29, #0x1\n"       // Extract F bit (position 0)
+        // Output F bit (bit 0 of shifted value = original bit 6)
+        "and x30, x28, #0x1\n"       // Extract F bit (FIQ)
         "add w27, w30, #'0'\n"       // Convert to ASCII
         "str w27, [x26]\n"           // Output F bit (should be '1' if disabled)
         
-        // Check if ALL interrupts are properly disabled
-        "and x30, x29, #0xF\n"       // Get all 4 DAIF bits
+        // Check if ALL interrupts are properly disabled (use corrected DAIF bits)
+        "and x30, x28, #0xF\n"       // Get all 4 DAIF bits (x28 contains shifted bits)
         "cmp x30, #0xF\n"            // Should be 1111 (all disabled)
         "beq interrupts_fully_disabled\n"
         
@@ -1027,20 +1039,20 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #'G'\n"            // 'G' = Got
         "str w27, [x26]\n"
         
-        // Re-output the actual DAIF bits we got (for comparison)
-        "and x30, x29, #0x8\n"       // D bit
+        // Re-output the actual DAIF bits we got (for comparison) - CORRECTED
+        "and x30, x28, #0x8\n"       // D bit (from shifted value)
         "lsr x30, x30, #3\n"
         "add w27, w30, #'0'\n"
         "str w27, [x26]\n"
-        "and x30, x29, #0x4\n"       // A bit
+        "and x30, x28, #0x4\n"       // A bit (from shifted value)
         "lsr x30, x30, #2\n"
         "add w27, w30, #'0'\n"
         "str w27, [x26]\n"
-        "and x30, x29, #0x2\n"       // I bit
+        "and x30, x28, #0x2\n"       // I bit (from shifted value)
         "lsr x30, x30, #1\n"
         "add w27, w30, #'0'\n"
         "str w27, [x26]\n"
-        "and x30, x29, #0x1\n"       // F bit
+        "and x30, x28, #0x1\n"       // F bit (from shifted value)
         "add w27, w30, #'0'\n"
         "str w27, [x26]\n"
         

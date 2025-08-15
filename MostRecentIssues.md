@@ -1,5 +1,35 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
+August 15th 2025 (Continue from July 27th)
+
+Started with DAIF register invevstigation. The kernel log should show DAIF1111, which means all interrupts disabled, but I only got 0000.
+
+Next I tried multiple cpu configurations in run_nographic.sh, a53, a72, a76 and max mode. The result is all of them showed identical hang patterm.
+
+Then I tried acceleration mode testing using -accel tcg, thread=single - smp 1, virtual machine with -m virt, and raspherry Pi 3B emulation, all ended with same hang pattern.
+
+Then I used docker environment testing multiple QEMU version, turns out they were hanging at early boot, that includes QEMU 4.2.1 and QEMU 6.2.0. Which confirms my original assumption that my current QEMU environment(9.2.2) has regression bug is false.
+
+But after I look closer, I identified a DAIF measurement bug:
+Root Cause
+The code is reading DAIF flags from wrong bit positions:
+Current (WRONG): Extracting bits [3:0] from DAIF register
+Correct: DAIF flags are in bits [9:6] per ARM Architecture Reference Manual
+
+After fixing the following locations:
+Lines 803-805: Early DAIF verification
+Lines 881-907: First detailed DAIF readout
+Lines 973-1005: Post-interrupt-disable DAIF readout
+Lines 1008-1052: DAIF comparison section
+
+The latest kernel log below shows "DAIF1111", meaning interrupts are properly diabled. This also meant the elimination of "interrupts enabbled during MMU" theory I had before.
+
+At this point, it is still hanging at LOOP marker, which currently on line 1118 in memory_core.c. 
+
+Next steps would likely involving using real hardware like Raspherry Pi 5.
+
+Latest kernel log: https://docs.google.com/document/d/18_WSzjycW-qaWhEfDN25P8jBBw-6B7YBRBf6NW0O0AI/edit?usp=sharing
+
 July 29th 2025
 
 Fixed early BSS dependency violation in start.S. Check out line 34-75.

@@ -89,7 +89,7 @@ no_pac_support:
 check_mte_support:
     // Check for Memory Tagging Extensions (MTE)
     mrs x21, id_aa64pfr1_el1
-    and x22, x21, #0xF0         // Extract MTE field (bits [11:8])
+    and x22, x21, #0xF00         // Extract MTE field (bits [11:8])
     cbz x22, no_mte_support
     
     // MTE is supported - output 'M' for MTE
