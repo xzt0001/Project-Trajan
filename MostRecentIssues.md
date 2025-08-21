@@ -1,5 +1,29 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
+August 22nd, 2025
+
+Several potential root causes that I just RULED OUT:
+
+1. EL2 Banking Issues:
+Confirmed at EL1, not EL2
+SCTLR_EL1 is the correct register to write
+
+2. No SCTLR_EL12 confusion:
+Multiple Write Conflicts
+Single writer (x28) confirmed
+No retry loop interference
+Clean execution path
+
+3. Pre-Existing MMU State:
+M bit = 0 before write (confirmed)
+Clean MMU disabled baseline
+
+4. Post-Write Verification Issues:
+Hang occurs before readback
+Problem is at the write instruction itself
+
+Latest kernel log: https://docs.google.com/document/d/1_gwPRT80cPFGeaXvLu79bVNlKqz7B6o1xCJNlQP1Z04/edit?usp=sharing
+
 August 15th 2025 (Continue from July 27th)
 
 Started with DAIF register invevstigation. The kernel log should show DAIF1111, which means all interrupts disabled, but I only got 0000.

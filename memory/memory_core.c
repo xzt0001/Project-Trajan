@@ -200,8 +200,8 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     // TG0[15:14] = 0 (4KB granule for TTBR0_EL1)
     tcr |= (0ULL << 14);
     
-    // TG1[31:30] = 2 (4KB granule for TTBR1_EL1)
-    tcr |= (2ULL << 30);
+    // TG1[31:30] = 1 (4KB granule for TTBR1_EL1)
+    tcr |= (0ULL << 30);
     
     // SH0[13:12] = 3 (Inner shareable for TTBR0)
     tcr |= (3ULL << 12);
@@ -546,45 +546,45 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #':'\n"
         "str w27, [x26]\n"
         
-        // COMPLETELY REPLACE with known-good value
-        "mov x23, #0x0800\n"         // Base SCTLR value (essential bits)
-        "movk x23, #0x30D0, lsl #16\n" // Upper bits for known-good config
+        // DEAD CODE: x23 comprehensive computation (COMMENTED OUT - Step 1)
+        // "mrs x23, sctlr_el1\n"       // Read current firmware SCTLR_EL1
+        // 
+        // // PRESERVE RES1 bits, only modify specific control bits
+        // "mov w27, #'S'\n"            // 'S' = Setting (preserving firmware base)
+        // "str w27, [x26]\n"
+        // "mov w27, #'E'\n"
+        // "str w27, [x26]\n"
+        // "mov w27, #'T'\n"
+        // "str w27, [x26]\n"
+        // "mov w27, #':'\n"
+        // "str w27, [x26]\n"
+        // 
+        // // Only set the bits we need, preserving all RES1 bits
+        // "orr x23, x23, #0x1000\n"    // Set I(12) - instruction cache
+        // "orr x23, x23, #0x4\n"       // Set C(2) - data cache
+        // "orr x23, x23, #0x1\n"       // Set M(0) - MMU enable
         
-        // SET cache configuration that matches our MAIR
-        "mov w27, #'S'\n"            // 'S' = Setting  
-        "str w27, [x26]\n"
-        "mov w27, #'E'\n"
-        "str w27, [x26]\n"
-        "mov w27, #'T'\n"
-        "str w27, [x26]\n"
-        "mov w27, #':'\n"
-        "str w27, [x26]\n"
-        
-        "orr x23, x23, #0x1000\n"    // Set I(12) - instruction cache
-        "orr x23, x23, #0x4\n"       // Set C(2) - data cache
-        "orr x23, x23, #0x1\n"       // Set M(0) - MMU enable
-        
-        // DEBUG: Show our final SCTLR value
-        "mov w27, #'F'\n"            // 'F' = Final SCTLR
-        "str w27, [x26]\n"
-        "mov w27, #'I'\n"
-        "str w27, [x26]\n"
-        "mov w27, #'N'\n"
-        "str w27, [x26]\n"
-        "mov w27, #':'\n"
-        "str w27, [x26]\n"
-        // Output our SCTLR value (simplified hex output)
-        "and x29, x23, #0xFFFF\n"    // Get low 16 bits
-        "lsr x29, x29, #12\n"        // Show bits 12-15 (I,Z,C,A bits)
-        "and x29, x29, #0xF\n"       // Just 4 bits
-        "cmp x29, #10\n"
-        "b.lt 52f\n"
-        "add x29, x29, #'A'-10\n"
-        "b 53f\n"
-        "52:\n"
-        "add x29, x29, #'0'\n"
-        "53:\n"
-        "str w29, [x26]\n"
+        // DEAD CODE: x23 debug output (COMMENTED OUT - Step 1)  
+        // "mov w27, #'F'\n"            // 'F' = Final SCTLR
+        // "str w27, [x26]\n"
+        // "mov w27, #'I'\n"
+        // "str w27, [x26]\n"
+        // "mov w27, #'N'\n"
+        // "str w27, [x26]\n"
+        // "mov w27, #':'\n"
+        // "str w27, [x26]\n"
+        // // Output our SCTLR value (simplified hex output)
+        // "and x29, x23, #0xFFFF\n"    // Get low 16 bits
+        // "lsr x29, x29, #12\n"        // Show bits 12-15 (I,Z,C,A bits)
+        // "and x29, x29, #0xF\n"       // Just 4 bits
+        // "cmp x29, #10\n"
+        // "b.lt 52f\n"
+        // "add x29, x29, #'A'-10\n"
+        // "b 53f\n"
+        // "52:\n"
+        // "add x29, x29, #'0'\n"
+        // "53:\n"
+        // "str w29, [x26]\n"
         
         // DEBUG: Before MMU enable sequence
         "mov w27, #'M'\n"
@@ -916,16 +916,15 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #':'\n"
         "str w27, [x26]\n"
         
-        // Read current SCTLR_EL1 to preserve non-MMU bits
+        // Read current SCTLR_EL1 to preserve RES1 bits
         "mrs x28, sctlr_el1\n"
         
-        // Create minimal configuration: preserve all bits except MMU-related ones
-        "bic x28, x28, #0x1\n"       // Clear M bit (MMU enable)
-        "bic x28, x28, #0x4\n"       // Clear C bit (data cache)
-        "bic x28, x28, #0x1000\n"    // Clear I bit (instruction cache)
+        // SAFE: Preserve all RES1 bits, only add MMU enable
+        // Note: Firmware may already have M=0, C=0, I=0, so just add M=1
+        // Do NOT use bic instructions as they can clear RES1 bits
         
-        // Set ONLY the MMU enable bit
-        "orr x28, x28, #0x1\n"       // Set M bit (MMU enable) - this is all we need
+        // Set ONLY the MMU enable bit (safest approach)
+        "orr x28, x28, #0x1\n"       // Set M bit (MMU enable) - preserve everything else
         
         // Debug: Show minimal SCTLR value we're about to test
         "mov w27, #'M'\n"            // 'M' = Minimal
@@ -1108,45 +1107,211 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "and x0, x29, #0x1\n"        // Check if MMU is already enabled
         "cbnz x0, already_enabled\n" // Branch if MMU already enabled
         
-        // STAGE 3: Timeout-based MMU enable loop
-        "mov w27, #'L'\n"            // 'L' = Loop start
+        // PRIORITY 1: Single MMU enable attempt (no retry loop)
+        "mov w27, #'S'\n"            // 'S' = Single attempt
         "str w27, [x26]\n"
-        "mov w27, #'O'\n"            // 'O' = lOop
+        "mov w27, #'I'\n"            // 'I' = sIngle
         "str w27, [x26]\n"
-        "mov w27, #'O'\n"            // 'O' = loOp
+        "mov w27, #'N'\n"            // 'N' = siNgle
         "str w27, [x26]\n"
-        "mov w27, #'P'\n"            // 'P' = looP
+        "mov w27, #'G'\n"            // 'G' = sinGle
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
         "str w27, [x26]\n"
         
-        "mmu_timeout_retry_loop:\n"
-        // Decrement timeout counter first
-        "subs x30, x30, #1\n"        // Decrement and set flags
-        "beq mmu_timeout_handler\n"  // Branch if timeout reached (x30 = 0)
-        
-        // Output progress marker every 16K iterations (for debugging)
-        "and x0, x30, #0x3FFF\n"     // Check if low 14 bits are zero
-        "cbnz x0, skip_progress\n"   // Skip if not at 16K boundary
-        "mov w27, #'.'\n"            // Progress marker
+        // PRIORITY 2: Comprehensive Register Diagnostic Dump
+        "mov w27, #'D'\n"            // 'D' = Diagnostic dump
         "str w27, [x26]\n"
-        "skip_progress:\n"
+        "mov w27, #'I'\n"            // 'I' = dIagnostic
+        "str w27, [x26]\n"
+        "mov w27, #'A'\n"            // 'A' = diAgnostic
+        "str w27, [x26]\n"
+        "mov w27, #'G'\n"            // 'G' = diaGnostic
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
         
-        // Attempt MMU enable
-        "msr sctlr_el1, x28\n"       // Set minimal SCTLR (just MMU bit)
-        "isb\n"                      // Immediate instruction synchronization
+        // 1. CurrentEL Detection and Output
+        "mrs x0, currentel\n"        // Get current exception level
+        "lsr x0, x0, #2\n"           // Extract EL bits [3:2]
+        "and x0, x0, #0x3\n"         // Mask to 2 bits (EL0-EL3)
+        "mov w27, #'E'\n"            // 'E' = Exception Level
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"            // 'L' = eL
+        "str w27, [x26]\n"
+        "add w27, w0, #'0'\n"        // Convert EL to ASCII
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
         
-        // Test if MMU enable succeeded
-        "mrs x29, sctlr_el1\n"       // Read back SCTLR_EL1
+        // 2. SCTLR_EL1 Readback (confirm what we actually wrote)
+        "mrs x1, sctlr_el1\n"        // Re-read SCTLR_EL1
+        "mov w27, #'S'\n"            // 'S' = SCTLR
+        "str w27, [x26]\n"
+        "mov w27, #'C'\n"            // 'C' = sCtlr
+        "str w27, [x26]\n"
+        "mov w27, #'T'\n"            // 'T' = scTlr
+        "str w27, [x26]\n"
+        "mov w27, #'R'\n"            // 'R' = sctR
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // Output SCTLR_EL1 M bit status
+        "and x2, x1, #0x1\n"         // Extract M bit
+        "add w27, w2, #'0'\n"        // Convert to ASCII (should be '0')
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // 3. Exception Level Conditional Logic
+        "cmp x0, #2\n"               // Check if CurrentEL == 2 (EL2)
+        "b.eq el2_diagnostics\n"     // Branch to EL2-specific diagnostics
+        "cmp x0, #1\n"               // Check if CurrentEL == 1 (EL1)
+        "b.eq el1_diagnostics\n"     // Branch to EL1-specific diagnostics
+        
+        // Unexpected exception level
+        "mov w27, #'U'\n"            // 'U' = Unexpected EL
+        "str w27, [x26]\n"
+        "mov w27, #'N'\n"            // 'N' = uNexpected
+        "str w27, [x26]\n"
+        "mov w27, #'K'\n"            // 'K' = unKnown
+        "str w27, [x26]\n"
+        "b diagnostic_complete\n"
+        
+        "el2_diagnostics:\n"
+        // Running at EL2 - check HCR_EL2 and banking
+        "mov w27, #'H'\n"            // 'H' = HCR_EL2
+        "str w27, [x26]\n"
+        "mov w27, #'C'\n"            // 'C' = hCr
+        "str w27, [x26]\n"
+        "mov w27, #'R'\n"            // 'R' = hcR
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        "mrs x3, hcr_el2\n"          // Read HCR_EL2 (safe at EL2)
+        
+        // Check E2H bit (bit 34)
+        "and x4, x3, #(1 << 34)\n"   // Extract E2H bit
+        "cbnz x4, e2h_enabled\n"     // Branch if E2H=1
+        
+        // E2H=0: Normal EL2, SCTLR_EL1 should work
+        "mov w27, #'N'\n"            // 'N' = Normal EL2
+        "str w27, [x26]\n"
+        "mov w27, #'O'\n"            // 'O' = nOrmal
+        "str w27, [x26]\n"
+        "mov w27, #'R'\n"            // 'R' = noRmal
+        "str w27, [x26]\n"
+        "b check_tvm_bit\n"
+        
+        "e2h_enabled:\n"
+        // E2H=1: VHE mode, SCTLR_EL12 is the effective register
+        "mov w27, #'V'\n"            // 'V' = VHE mode
+        "str w27, [x26]\n"
+        "mov w27, #'H'\n"            // 'H' = vHe
+        "str w27, [x26]\n"
+        "mov w27, #'E'\n"            // 'E' = vhE
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // NOTE: SCTLR_EL12 access removed due to Cortex-A53 limitation
+        // Cortex-A53 (ARMv8.0-A) doesn't support VHE/sctlr_el12
+        // Indicate VHE detection but can't read effective register
+        "mov w27, #'N'\n"            // 'N' = Not supported on this CPU
+        "str w27, [x26]\n"
+        "mov w27, #'S'\n"            // 'S' = not Supported
+        "str w27, [x26]\n"
+        "mov w27, #'U'\n"            // 'U' = not sUpported
+        "str w27, [x26]\n"
+        "mov w27, #'P'\n"            // 'P' = not suPported
+        "str w27, [x26]\n"
+        "b diagnostic_complete\n"
+        
+        "check_tvm_bit:\n"
+        // Check TVM bit (bit 26) for VM control trapping
+        "and x4, x3, #(1 << 26)\n"   // Extract TVM bit
+        "cbnz x4, tvm_trapping\n"    // Branch if TVM=1
+        
+        "mov w27, #'T'\n"            // 'T' = TVM=0 (no trapping)
+        "str w27, [x26]\n"
+        "mov w27, #'V'\n"            // 'V' = tVm
+        "str w27, [x26]\n"
+        "mov w27, #'0'\n"            // '0' = TVM=0
+        "str w27, [x26]\n"
+        "b diagnostic_complete\n"
+        
+        "tvm_trapping:\n"
+        "mov w27, #'T'\n"            // 'T' = TVM=1 (trapping enabled)
+        "str w27, [x26]\n"
+        "mov w27, #'V'\n"            // 'V' = tVm  
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"            // '1' = TVM=1
+        "str w27, [x26]\n"
+        "b diagnostic_complete\n"
+        
+        "el1_diagnostics:\n"
+        // Running at EL1 - normal case, but check for hypervisor interference
+        "mov w27, #'E'\n"            // 'E' = EL1 mode
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"            // 'L' = eL1
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"            // '1' = el1
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // Attempt to read HCR_EL2 (may fault at EL1)
+        "mov w27, #'H'\n"            // 'H' = Attempting HCR_EL2 read
+        "str w27, [x26]\n"
+        "mov w27, #'C'\n"            // 'C' = hCr
+        "str w27, [x26]\n"
+        "mov w27, #'R'\n"            // 'R' = hcR
+        "str w27, [x26]\n"
+        "mov w27, #'?'\n"            // '?' = Unknown (may fault)
+        "str w27, [x26]\n"
+        
+        // TODO: Add exception handling for HCR_EL2 read at EL1
+        // For now, skip HCR_EL2 read to avoid fault
+        "b diagnostic_complete\n"
+        
+        "diagnostic_complete:\n"
+        // End of diagnostic dump
+        "mov w27, #'\\r'\n"
+        "str w27, [x26]\n"
+        "mov w27, #'\\n'\n"
+        "str w27, [x26]\n"
+        
+        // NOW ATTEMPT MMU ENABLE (after diagnostic dump)
+        "mov w27, #'M'\n"            // 'M' = MMU enable attempt
+        "str w27, [x26]\n"
+        "mov w27, #'M'\n"            // 'M' = mmU
+        "str w27, [x26]\n"
+        "mov w27, #'U'\n"            // 'U' = mmU
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
+        
+        // Critical: Single MMU enable attempt
+        "msr sctlr_el1, x28\n"       // Write minimal SCTLR (M=1 only)
+        "isb\n"                      // Mandatory instruction synchronization
+        
+        // Immediate verification (no retry)
+        "mrs x29, sctlr_el1\n"       // Read back SCTLR_EL1 immediately
         "and x0, x29, #0x1\n"        // Check if MMU bit is actually set
-        "cbnz x0, mmu_timeout_success\n" // Branch if MMU bit is set
+        "cbnz x0, mmu_enable_success\n" // Branch if M=1 (success)
         
-        // MMU not enabled yet, add small delay and retry
-        "mov x0, #100\n"             // Small delay counter
-        "delay_loop:\n"
-        "subs x0, x0, #1\n"          // Decrement delay
-        "bne delay_loop\n"           // Loop until delay complete
-        
-        // Continue retry loop
-        "b mmu_timeout_retry_loop\n"
+        // MMU enable failed - show failure marker
+        "mov w27, #'F'\n"            // 'F' = Failed
+        "str w27, [x26]\n"
+        "mov w27, #'A'\n"            // 'A' = fAiled
+        "str w27, [x26]\n"
+        "mov w27, #'I'\n"            // 'I' = faIled
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"            // 'L' = faiLed
+        "str w27, [x26]\n"
+        "b test_progressive_enable\n" // Try fallback approaches
         
         "already_enabled:\n"
         // MMU was already enabled somehow
@@ -1156,75 +1321,23 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "str w27, [x26]\n"
         "mov w27, #'R'\n"            // 'R' = alReady
         "str w27, [x26]\n"
-        "b minimal_mmu_success\n"    // Jump to success path
+        "b mmu_enable_success\n"     // Jump to success path
         
-        "mmu_timeout_success:\n"
-        // MMU enable succeeded within timeout
-        "mov w27, #'T'\n"            // 'T' = Timeout success
+        "mmu_enable_success:\n"
+        // MMU enable succeeded!
+        "mov w27, #'M'\n"            // 'M' = MMU success
         "str w27, [x26]\n"
-        "mov w27, #'S'\n"            // 'S' = Success
+        "mov w27, #'M'\n"            // 'M' = mmU
         "str w27, [x26]\n"
-        "mov w27, #'U'\n"            // 'U' = sUccess
+        "mov w27, #'U'\n"            // 'U' = mmU  
         "str w27, [x26]\n"
-        
-        // Show how many iterations were left (simplified)
-        "and x0, x30, #0xF\n"        // Get low 4 bits of remaining counter
-        "cmp x0, #10\n"
-        "b.lt ts1\n"
-        "add x0, x0, #'A'-10\n"      // Convert to A-F
-        "b ts2\n"
-        "ts1: add x0, x0, #'0'\n"    // Convert to 0-9
-        "ts2: str w0, [x26]\n"       // Output remaining iterations (low nibble)
-        
-        "b minimal_mmu_success\n"    // Jump to success path
-        
-        "mmu_timeout_handler:\n"
-        // Timeout occurred - MMU enable failed despite multiple attempts
-        "mov w27, #'T'\n"            // 'T' = Timeout
+        "mov w27, #'O'\n"            // 'O' = Ok
         "str w27, [x26]\n"
-        "mov w27, #'O'\n"            // 'O' = timeOut
-        "str w27, [x26]\n"
-        "mov w27, #'U'\n"            // 'U' = timeOUt
-        "str w27, [x26]\n"
-        "mov w27, #'T'\n"            // 'T' = timeouT
+        "mov w27, #'K'\n"            // 'K' = oK
         "str w27, [x26]\n"
         
-        // Verify final state
-        "mrs x29, sctlr_el1\n"       // Read final SCTLR_EL1
-        "and x0, x29, #0x1\n"        // Check final MMU state
-        "cbnz x0, late_success\n"    // Check if MMU enabled after timeout
-        
-        // True timeout failure - MMU never enabled
-        "mov w27, #'F'\n"            // 'F' = Failed
-        "str w27, [x26]\n"
-        "mov w27, #'A'\n"            // 'A' = fAiled
-        "str w27, [x26]\n"
-        "mov w27, #'I'\n"            // 'I' = faIled
-        "str w27, [x26]\n"
-        "mov w27, #'L'\n"            // 'L' = faiLed
-        "str w27, [x26]\n"
-        
+        // After diagnostic dump, proceed to fallback (if needed)
         "b test_progressive_enable\n" // Try progressive/fallback enable
-        
-        "late_success:\n"
-        // MMU enabled after timeout period
-        "mov w27, #'L'\n"            // 'L' = Late success
-        "str w27, [x26]\n"
-        "mov w27, #'A'\n"            // 'A' = lAte
-        "str w27, [x26]\n"
-        "mov w27, #'T'\n"            // 'T' = laTe
-        "str w27, [x26]\n"
-        "mov w27, #'E'\n"            // 'E' = latE
-        "str w27, [x26]\n"
-        
-        "b minimal_mmu_success\n"    // Jump to success path
-        
-        "minimal_mmu_success:\n"
-        // Minimal MMU enable succeeded!
-        "mov w27, #'S'\n"            // 'S' = Success  
-        "str w27, [x26]\n"
-        "mov w27, #'1'\n"            // '1' = Test 1 succeeded
-        "str w27, [x26]\n"
         
         // Re-enable interrupts now that MMU is stable
         "mov w27, #'R'\n"            // 'R' = Re-enable interrupts marker
@@ -1241,69 +1354,24 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "subs x30, x30, #1\n"
         "bne 1b\n"
         
-        // Post-MMU instruction pipeline synchronization for minimal config
+        // Post-MMU instruction pipeline synchronization
         "isb\n"                      // Force instruction pipeline flush
         "nop\n"                      // Pipeline bubble 1
         "nop\n"                      // Pipeline bubble 2
         "dsb sy\n"                   // System-wide data synchronization
         "isb\n"                      // Second instruction synchronization
         
-        // Success with minimal configuration - now optionally add caches
-        "mov w27, #'A'\n"            // 'A' = Add caches
+        // Success - MMU is now enabled
+        "mov w27, #'S'\n"            // 'S' = Success
         "str w27, [x26]\n"
-        "mov w27, #'D'\n"            // 'D' = aDd
+        "mov w27, #'U'\n"            // 'U' = sUccess
         "str w27, [x26]\n"
-        "mov w27, #'D'\n"            // 'D' = aDd
+        "mov w27, #'C'\n"            // 'C' = suCcess
         "str w27, [x26]\n"
-        
-        // Optionally add instruction cache (safer than data cache)
-        "orr x28, x28, #0x1000\n"    // Add I bit (instruction cache)
-        "msr sctlr_el1, x28\n"       // Update SCTLR_EL1
-        "isb\n"                      // Synchronize
-        
-        // Test if instruction cache addition worked
-        "mrs x29, sctlr_el1\n"       // Read back
-        "and x30, x29, #0x1000\n"    // Check I bit
-        "cbnz x30, icache_added\n"   // Branch if I bit is set
-        
-        // I-cache addition failed, but MMU still works
-        "mov w27, #'i'\n"            // 'i' = icache failed (lowercase)
-        "str w27, [x26]\n"
-        "b minimal_mmu_final\n"
-        
-        "icache_added:\n"
-        "mov w27, #'I'\n"            // 'I' = Icache added successfully
+        "mov w27, #'C'\n"            // 'C' = sucCess
         "str w27, [x26]\n"
         
-        // Optionally try adding data cache (most risky)
-        "orr x28, x28, #0x4\n"       // Add C bit (data cache)
-        "msr sctlr_el1, x28\n"       // Update SCTLR_EL1
-        "isb\n"                      // Synchronize
-        
-        // Test if data cache addition worked
-        "mrs x29, sctlr_el1\n"       // Read back
-        "and x30, x29, #0x4\n"       // Check C bit
-        "cbnz x30, dcache_added\n"   // Branch if C bit is set
-        
-        // D-cache addition failed, but MMU + I-cache still works
-        "mov w27, #'c'\n"            // 'c' = dcache failed (lowercase)
-        "str w27, [x26]\n"
-        "b minimal_mmu_final\n"
-        
-        "dcache_added:\n"
-        "mov w27, #'C'\n"            // 'C' = Dcache added successfully
-        "str w27, [x26]\n"
-        
-        "minimal_mmu_final:\n"
-        // Final success with minimal configuration
-        "mov w27, #'M'\n"            // 'M' = Minimal
-        "str w27, [x26]\n"
-        "mov w27, #'O'\n"            // 'O' = Ok
-        "str w27, [x26]\n"
-        "mov w27, #'K'\n"            // 'K' = oK
-        "str w27, [x26]\n"
-        
-        // Jump directly to continuation point - minimal config worked
+        // Jump directly to continuation point
         "br x22\n"                   // Branch to physical continuation address
         
         "test_progressive_enable:\n"
@@ -1324,40 +1392,41 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #'B'\n"            // 'B' = Fallback sequence
         "str w27, [x26]\n"
         
-        // FIXED: Preserve cache bits in SCTLR_EL1 (don't clear them!)
-        "mov x29, x23\n"             // Save current SCTLR value
-        // NOTE: x23 already contains the SCTLR value with M bit set from above
-        // No need to clear cache bits - just use the value we already prepared
+        // DEAD CODE: x23 reference (COMMENTED OUT - Step 1)
+        // "mov x29, x23\n"             // Save current SCTLR value
+        // NOTE: x23 no longer computed (dead code path)
+        // Using x28 minimal path instead
         
         // PRE-MMU STATUS CHECK
         "mov w27, #'S'\n"            // 'S' = About to enable MMU
         "str w27, [x26]\n"
 
-        // DEBUG: Show SCTLR value we're about to write
-        "mov w27, #'V'\n"            // 'V' = Value
-        "str w27, [x26]\n"
-        "mov w27, #':'\n"
-        "str w27, [x26]\n"
-        // Output x23 value (SCTLR) - show low 16 bits
-        "and x29, x23, #0xFFFF\n"    
-        "lsr x29, x29, #12\n"        // Show high 4 bits of low 16
-        "and x29, x29, #0xF\n"       
-        "cmp x29, #10\n"
-        "b.lt 60f\n"
-        "add x29, x29, #'A'-10\n"
-        "b 61f\n"
-        "60:\n"
-        "add x29, x29, #'0'\n"
-        "61:\n"
-        "str w29, [x26]\n"
+        // DEAD CODE: x23 debug output (COMMENTED OUT - Step 1)
+        // "mov w27, #'V'\n"            // 'V' = Value
+        // "str w27, [x26]\n"
+        // "mov w27, #':'\n"
+        // "str w27, [x26]\n"
+        // // Output x23 value (SCTLR) - show low 16 bits
+        // "and x29, x23, #0xFFFF\n"    
+        // "lsr x29, x29, #12\n"        // Show high 4 bits of low 16
+        // "and x29, x29, #0xF\n"       
+        // "cmp x29, #10\n"
+        // "b.lt 60f\n"
+        // "add x29, x29, #'A'-10\n"
+        // "b 61f\n"
+        // "60:\n"
+        // "add x29, x29, #'0'\n"
+        // "61:\n"
+        // "str w29, [x26]\n"
         
-        // STEP 1B: Test with minimal SCTLR (just MMU bit)
-        "mov w27, #'T'\n"            // 'T' = Test minimal
-        "str w27, [x26]\n"
-        "mov x24, #0x1\n"            // Just MMU enable, no cache bits
-        "msr sctlr_el1, x24\n"       // Try minimal MMU enable
-        "mov w27, #'1'\n"            // '1' = Minimal test completed
-        "str w27, [x26]\n"
+        // DEAD CODE: x24 test (COMMENTED OUT - Step 1)
+        // "mov w27, #'T'\n"            // 'T' = Test minimal
+        // "str w27, [x26]\n"
+        // "mrs x24, sctlr_el1\n"       // Read firmware SCTLR to preserve RES1 bits
+        // "orr x24, x24, #0x1\n"       // Add MMU enable bit
+        // "msr sctlr_el1, x24\n"       // Try minimal MMU enable (RES1-safe)
+        // "mov w27, #'1'\n"            // '1' = Minimal test completed
+        // "str w27, [x26]\n"
         
         // STEP 3A: Verify page table integrity right before MMU
         "ldr x28, [x19]\n"           // Read first L0 entry
@@ -1369,7 +1438,8 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "cmp x28, x19\n"
         "b.ne ttbr_mismatch\n"
         
-        "msr sctlr_el1, x23\n"       // Try MMU enable
+        // DEAD CODE: x23 write attempt (COMMENTED OUT - Step 1)
+        // "msr sctlr_el1, x23\n"       // Try MMU enable
         
         "page_table_corrupt:\n"
         "mov w27, #'P'\n"            // P = Page table corrupt
@@ -1389,7 +1459,8 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "cmp x28, #1\n"              // Must be EL1
         "b.ne wrong_el\n"
         
-        "msr sctlr_el1, x23\n"       // Try MMU enable
+        // DEAD CODE: x23 write attempt (COMMENTED OUT - Step 1)
+        // "msr sctlr_el1, x23\n"       // Try MMU enable
         
         "wrong_el:\n"
         "mov w27, #'E'\n"            // E = Wrong exception level
@@ -1399,42 +1470,44 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "dsb sy\n"                   // Full system barrier
         "isb\n"                      // Instruction synchronization
         
-        // STEP 2A: Incremental MMU Enable (PRIMARY ATTEMPT)
-        "mov w27, #'2'\n"            // '2' = Trying Step 2A
-        "str w27, [x26]\n"
-        "mov w27, #'A'\n"            // 'A' = Step 2A
-        "str w27, [x26]\n"
+        // DEAD CODE: Step 2A progressive enable (COMMENTED OUT - Step 1)
+        // "mov w27, #'2'\n"            // '2' = Trying Step 2A
+        // "str w27, [x26]\n"
+        // "mov w27, #'A'\n"            // 'A' = Step 2A
+        // "str w27, [x26]\n"
+        // 
+        // "mrs x24, sctlr_el1\n"       // Read firmware SCTLR to preserve RES1 bits
+        // "orr x24, x24, #0x1\n"       // Add M bit only
+        // "msr sctlr_el1, x24\n"       // Try MMU-only enable (RES1-safe)
+        // "mov w27, #'m'\n"            // 'm' = MMU-only completed
+        // "str w27, [x26]\n"
+        // 
+        // "orr x24, x24, #0x1000\n"    // Add I bit (instruction cache)
+        // "msr sctlr_el1, x24\n"       // Try MMU + I
+        // "mov w27, #'i'\n"            // 'i' = +instruction cache
+        // "str w27, [x26]\n"
+        // 
+        // "orr x24, x24, #0x4\n"       // Add C bit (data cache)
+        // "msr sctlr_el1, x24\n"       // Try MMU + I + C
+        // "mov w27, #'c'\n"            // 'c' = +data cache
+        // "str w27, [x26]\n"
         
-        "mov x24, #0x1\n"            // M bit only
-        "msr sctlr_el1, x24\n"       // Try MMU-only enable
-        "mov w27, #'m'\n"            // 'm' = MMU-only completed
-        "str w27, [x26]\n"
+        // DEAD CODE: Step 2B Linux standard values (COMMENTED OUT - Step 1)
+        // "mov w27, #'2'\n"            // '2' = Trying Step 2B
+        // "str w27, [x26]\n"
+        // "mov w27, #'B'\n"            // 'B' = Step 2B
+        // "str w27, [x26]\n"
+        // 
+        // "mrs x24, sctlr_el1\n"       // Read firmware SCTLR to preserve RES1 bits
+        // "orr x24, x24, #0x1\n"       // Add MMU enable bit (M=1)
+        // "orr x24, x24, #0x4\n"       // Add data cache bit (C=1)
+        // "orr x24, x24, #0x1000\n"    // Add instruction cache bit (I=1)
+        // "msr sctlr_el1, x24\n"       // Try with standard cache config (RES1-safe)
+        // "mov w27, #'L'\n"            // 'L' = Linux values completed
+        // "str w27, [x26]\n"
         
-        "orr x24, x24, #0x1000\n"    // Add I bit (instruction cache)
-        "msr sctlr_el1, x24\n"       // Try MMU + I
-        "mov w27, #'i'\n"            // 'i' = +instruction cache
-        "str w27, [x26]\n"
-        
-        "orr x24, x24, #0x4\n"       // Add C bit (data cache)
-        "msr sctlr_el1, x24\n"       // Try MMU + I + C
-        "mov w27, #'c'\n"            // 'c' = +data cache
-        "str w27, [x26]\n"
-        
-        // STEP 2B: Linux kernel standard SCTLR values (FALLBACK)
-        "mov w27, #'2'\n"            // '2' = Trying Step 2B
-        "str w27, [x26]\n"
-        "mov w27, #'B'\n"            // 'B' = Step 2B
-        "str w27, [x26]\n"
-        
-        "mov x24, #0x0830\n"         // Linux kernel base value (low 16)
-        "movk x24, #0x30C5, lsl #16\n" // Linux kernel base value (high 16)
-        "orr x24, x24, #0x1\n"       // Add MMU enable
-        "msr sctlr_el1, x24\n"       // Try Linux kernel values
-        "mov w27, #'L'\n"            // 'L' = Linux values completed
-        "str w27, [x26]\n"
-        
-        // Original approach (now as final fallback)
-        "msr sctlr_el1, x23\n"       // ← ORIGINAL MMU Enable (final fallback)
+        // DEAD CODE: x23 final fallback (COMMENTED OUT - Step 1)
+        // "msr sctlr_el1, x23\n"       // ← ORIGINAL MMU Enable (final fallback)
         
         // POST-MMU STATUS CHECK  
         "mov w27, #'M'\n"            // 'M' = MMU enable instruction completed
