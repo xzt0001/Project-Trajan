@@ -72,7 +72,8 @@ MEMORY_OBJS := memory/pmm.o \
                memory/vmm.o \
                memory/memory_core.o \
                memory/memory_debug.o \
-               memory/address_space.o
+               memory/address_space.o \
+               memory/mmu_policy.o
 
 # Combine all object files
 OBJS := $(BOOT_OBJS) \

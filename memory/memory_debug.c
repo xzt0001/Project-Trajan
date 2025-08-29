@@ -700,6 +700,7 @@ void verify_critical_mappings_before_mmu(uint64_t* page_table_base) {
         *uart = '\r'; *uart = '\n';
     }
     
+    /* MOVED TO mmu_policy.c - mmu_comprehensive_tlbi_sequence()
     // A new, conservative TLB invalidation - step by step, local operations only
     *uart = 'T'; *uart = 'L'; *uart = 'B'; *uart = ':'; *uart = 'C'; *uart = 'O'; *uart = 'N'; *uart = 'S'; *uart = 'E'; *uart = 'R'; *uart = 'V';
     *uart = '\r'; *uart = '\n';
@@ -731,4 +732,5 @@ void verify_critical_mappings_before_mmu(uint64_t* page_table_base) {
     
     *uart = 'V'; *uart = 'E'; *uart = 'R'; *uart = 'I'; *uart = 'F'; *uart = 'Y'; *uart = ':'; *uart = 'O'; *uart = 'K';
     *uart = '\r'; *uart = '\n';
+    */
 } 

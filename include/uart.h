@@ -19,19 +19,31 @@
  * -DVA_BITS_48=0).
  */
 
+/* ========================================================================
+ * MMU POLICY CONSTANTS - MOVED TO memory_config.h
+ * ======================================================================== */
+
+/* MOVED TO memory_config.h - MMU POLICY CONSTANTS section
 #ifndef VA_BITS_48
-#define VA_BITS_48 1   /* Default: use the 48-bit scheme */
+#define VA_BITS_48 1   // Default: use the 48-bit scheme 
 #endif
 
 #if VA_BITS_48
-#define HIGH_VIRT_BASE 0xFFFF800000000000UL /* canonical for 48-bit */
+#define HIGH_VIRT_BASE 0xFFFF800000000000UL // canonical for 48-bit 
 #define TCR_T0SZ 16
 #define TCR_T1SZ 16
 #else
-#define HIGH_VIRT_BASE 0xFFFFFF8000000000UL /* canonical for 39-bit */
+#define HIGH_VIRT_BASE 0xFFFFFF8000000000UL // canonical for 39-bit 
 #define TCR_T0SZ 25
 #define TCR_T1SZ 25
 #endif
+*/
+
+/* Compatibility defines - reference the authoritative policy constants */
+#include "memory_config.h"
+#define HIGH_VIRT_BASE HIGH_VIRT_BASE_POLICY
+#define TCR_T0SZ TCR_T0SZ_POLICY  
+#define TCR_T1SZ TCR_T1SZ_POLICY
 
 // UART physical and virtual addresses (kept for reference)
 #define UART_PHYS 0x09000000

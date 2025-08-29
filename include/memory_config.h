@@ -39,6 +39,25 @@
 
 #define PTE_AF          (1UL << 10)  // Access Flag - must be set to avoid access faults
 
+/* ========================================================================
+ * MMU POLICY CONSTANTS (Authoritative - Do Not Duplicate)
+ * ======================================================================== */
+
+/** Translation Control Register Configuration */
+#ifndef VA_BITS_48
+#define VA_BITS_48 1   /* Default: use the 48-bit scheme */
+#endif
+
+#if VA_BITS_48
+#define TCR_T0SZ_POLICY 16  // 48-bit VA space
+#define TCR_T1SZ_POLICY 16
+#define HIGH_VIRT_BASE_POLICY 0xFFFF800000000000UL /* canonical for 48-bit */
+#else
+#define TCR_T0SZ_POLICY 25  // 39-bit VA space  
+#define TCR_T1SZ_POLICY 25
+#define HIGH_VIRT_BASE_POLICY 0xFFFFFF8000000000UL /* canonical for 39-bit */
+#endif
+
 /** Memory attributes indices for MAIR register */
 #define ATTR_IDX_DEVICE_nGnRnE 0  // Device, non-Gathering, non-Reordering, no Early write ack
 #define ATTR_IDX_NORMAL       1  // Normal memory, Inner/Outer Write-Back Cacheable
@@ -50,6 +69,10 @@
 #define MAIR_ATTR_DEVICE_nGnRE  0x04  // Device: non-Gathering, non-Reordering, Early Write Ack
 #define MAIR_ATTR_NORMAL_NC     0x44  // Normal Memory: NC, NC
 #define MAIR_ATTR_NORMAL        0xFF  // Normal Memory: WB RA/WA, WB RA/WA
+
+/* ========================================================================
+ * PAGE TABLE ENTRY FLAGS (Mechanics - Used by page table construction)
+ * ======================================================================== */
 
 /** Memory Type Attributes for ARMv8 */
 #define PTE_ATTRINDX(idx)   ((idx) << 2)  // Shift attribute index to appropriate bits [4:2]
