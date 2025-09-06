@@ -227,100 +227,12 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     // POLICY LAYER: Use authoritative TCR configuration (eliminates duplication)
     mmu_configure_tcr_kernel_only(VA_BITS_48 ? 48 : 39);
     
-    /* COMMENTED OUT: Replaced by policy layer call above
-    // **CRITICAL FIX 1: Complete TCR_EL1 Configuration**
-    // Set up comprehensive TCR_EL1 (Translation Control Register)
-    uint64_t tcr = 0;
-    
-    // VA size: selectable via VA_BITS_48 (see uart.h)
-    //   48-bit VA → TCR_T0SZ/T1SZ = 16
-    //   39-bit VA → 25
-    tcr |= ((uint64_t)TCR_T0SZ << 0);
-    
-    tcr |= ((uint64_t)TCR_T1SZ << 16);
-    
-    // TG0[15:14] = 0 (4KB granule for TTBR0_EL1)
-    tcr |= (0ULL << 14);
-    
-    // TG1[31:30] = 1 (4KB granule for TTBR1_EL1)
-    tcr |= (0ULL << 30);
-    
-    // SH0[13:12] = 3 (Inner shareable for TTBR0)
-    tcr |= (3ULL << 12);
-    
-    // SH1[29:28] = 3 (Inner shareable for TTBR1)
-    tcr |= (3ULL << 28);
-    
-    // ORGN0[11:10] = 1 (Outer Write-Back, Read/Write Allocate for TTBR0)
-    tcr |= (1ULL << 10);
-    
-    // ORGN1[27:26] = 1 (Outer Write-Back, Read/Write Allocate for TTBR1)
-    tcr |= (1ULL << 26);
-    
-    // IRGN0[9:8] = 1 (Inner Write-Back, Read/Write Allocate for TTBR0)
-    tcr |= (1ULL << 8);
-    
-    // IRGN1[25:24] = 1 (Inner Write-Back, Read/Write Allocate for TTBR1)
-    tcr |= (1ULL << 24);
-    
-    // EPD0 = 0 (Enable TTBR0 page table walks)
-    tcr |= (0ULL << 7);
-    
-    // EPD1 = 0 (Enable TTBR1 page table walks)  
-    tcr |= (0ULL << 23);
-    
-    // IPS[34:32] = 1 (40-bit physical address size)
-    tcr |= (1ULL << 32);
-    
-    // TBI0 = 1 (Top Byte Ignored for TTBR0)
-    tcr |= (1ULL << 37);
-    
-    // TBI1 = 1 (Top Byte Ignored for TTBR1)
-    tcr |= (1ULL << 38);
-    
-    // AS = 0 (ASID size is 8-bit)
-    tcr |= (0ULL << 36);
-    
-    *uart = 'T'; *uart = 'C'; *uart = 'R'; *uart = ':';
-    uart_hex64_early(tcr);
-    *uart = '\r'; *uart = '\n';
-    
-    // Verify critical TCR_EL1 fields
-    *uart = 'V'; *uart = 'A'; *uart = 'L'; *uart = ':';
-    uart_hex64_early(tcr & 0x3F);
-    *uart = '/';
-    uart_hex64_early((tcr >> 16) & 0x3F);
-    *uart = '/';
-    uart_hex64_early((tcr >> 32) & 0x7);
-    *uart = '\r'; *uart = '\n';
-    
-    // DEBUG: After TCR_EL1 setup
-    *uart = 'T'; *uart = 'C'; *uart = 'R'; *uart = ':'; *uart = 'O'; *uart = 'K';
-    *uart = '\r'; *uart = '\n';
-    */
-    
     // Get TCR value for assembly input (policy layer is authoritative source)
     uint64_t tcr;
     __asm__ volatile("mrs %0, tcr_el1" : "=r"(tcr));
     
     // POLICY LAYER: Use authoritative MAIR configuration (eliminates duplication)
     mmu_configure_mair();
-    
-    /* COMMENTED OUT: Replaced by policy layer call above
-    // Set up MAIR_EL1 (Memory Attribute Indirection Register)
-    uint64_t mair = (MAIR_ATTR_DEVICE_nGnRnE << (8 * ATTR_IDX_DEVICE_nGnRnE)) |
-                    (MAIR_ATTR_NORMAL << (8 * ATTR_IDX_NORMAL)) |
-                    (MAIR_ATTR_NORMAL_NC << (8 * ATTR_IDX_NORMAL_NC)) |
-                    (MAIR_ATTR_DEVICE_nGnRE << (8 * ATTR_IDX_DEVICE_nGnRE));
-    
-    // DEBUG: After MAIR_EL1 setup
-    *uart = 'M'; *uart = 'A'; *uart = 'I'; *uart = 'R'; *uart = ':'; *uart = 'O'; *uart = 'K';
-    *uart = '\r'; *uart = '\n';
-    
-    *uart = 'M'; *uart = 'A'; *uart = 'I'; *uart = 'R'; *uart = ':';
-    uart_hex64_early(mair);
-    *uart = '\r'; *uart = '\n';
-    */
     
     // Get MAIR value for assembly input (policy layer is authoritative source)
     uint64_t mair;
@@ -445,19 +357,49 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #'\\n'\n"
         "str w27, [x26]\n"
         
-        // Set up memory attributes
-        "msr mair_el1, x21\n"        // Set MAIR_EL1
-        "isb\n"
+        // BREAKPOINT #1: End assembly block for policy layer register setup
+        "mov w27, #'P'\n"            // 'P' = Policy layer taking over
+        "str w27, [x26]\n"
+        "mov w27, #'O'\n"            // 'O' = pOlicy  
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"            // 'L' = poLicy
+        "str w27, [x26]\n"
+        "mov w27, #'1'\n"            // '1' = Breakpoint 1
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
         
-        // Set up translation control (keep the good TCR_EL1 setup)
-        "msr tcr_el1, x20\n"         // Set complete TCR_EL1
-        "isb\n"
+        // End assembly block - execution continues to policy layer calls
         
-        // Set translation table bases - separate page tables for TTBR0 and TTBR1
-        "msr ttbr0_el1, x19\n"       // Set TTBR0_EL1 to page table for low addresses
-        "msr ttbr1_el1, x18\n"       // Set TTBR1_EL1 to separate page table for high addresses
-        "isb\n"
-        
+        : // No outputs from first assembly block  
+        : "r"(page_table_phys_ttbr0), // %0: page table base for TTBR0_EL1
+          "r"(page_table_phys_ttbr1), // %1: page table base for TTBR1_EL1
+          "r"(tcr),                  // %2: TCR_EL1 value (not used in this block)
+          "r"(mair),                 // %3: MAIR_EL1 value (not used in this block)
+          "r"(continuation_phys),    // %4: continuation point (physical)
+          "r"(continuation_virt),    // %5: continuation point (virtual)  
+          [page_mask] "r"(~0xFFFUL)  // %6: page mask for alignment
+        : "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "x0", "x1", "x2", "x3", "memory"
+    );
+    
+    // ✅ POLICY LAYER CALLS - Replace register writes with centralized policy
+    *uart = 'R'; *uart = 'E'; *uart = 'G'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
+    *uart = '\r'; *uart = '\n';
+    
+    // Set up memory attributes (replacing msr mair_el1, x21)
+    mmu_configure_mair();
+    
+    // Set up translation control (replacing msr tcr_el1, x20) 
+    mmu_configure_tcr_kernel_only(VA_BITS_48 ? 48 : 39);
+    
+    // Set translation table bases (replacing msr ttbr0_el1, x19 and msr ttbr1_el1, x18)
+    mmu_set_ttbr_bases(page_table_phys_ttbr0, page_table_phys_ttbr1);
+    
+    *uart = 'R'; *uart = 'E'; *uart = 'G'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // Resume assembly block for cache flush and debug infrastructure
+    asm volatile (
         // PHASE 1: COMPREHENSIVE CACHE FLUSH FOR PAGE TABLE COHERENCY
         "mov w27, #'P'\n"
         "str w27, [x26]\n"
@@ -1359,11 +1301,43 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #':'\n"            // → "ASM:"
         "str w27, [x26]\n"
         
-        // HYBRID APPROACH: MMU enable in assembly for proper physical→virtual transition
-        // Critical: Single MMU enable attempt (policy layer configured registers)
-        "msr sctlr_el1, x28\n"       // Write minimal SCTLR (M=1 only)
-        "isb\n"                      // Mandatory instruction synchronization
+        // BREAKPOINT #2: End assembly block for policy layer MMU enable
+        "mov w27, #'P'\n"            // 'P' = Policy layer taking over
+        "str w27, [x26]\n"
+        "mov w27, #'O'\n"            // 'O' = pOlicy  
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"            // 'L' = poLicy
+        "str w27, [x26]\n"
+        "mov w27, #'2'\n"            // '2' = Breakpoint 2
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
         
+        // End assembly block - execution continues to policy layer MMU enable
+        
+        : // No outputs from second assembly block
+        : "r"(page_table_phys_ttbr0), // %0: page table base for TTBR0_EL1
+          "r"(page_table_phys_ttbr1), // %1: page table base for TTBR1_EL1
+          "r"(tcr),                  // %2: TCR_EL1 value
+          "r"(mair),                 // %3: MAIR_EL1 value
+          "r"(continuation_phys),    // %4: continuation point (physical)
+          "r"(continuation_virt),    // %5: continuation point (virtual)
+          [page_mask] "r"(~0xFFFUL)  // %6: page mask for alignment
+        : "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "x0", "x1", "x2", "x3", "memory"
+    );
+    
+    // ✅ POLICY LAYER CALL - Replace SCTLR write with centralized policy
+    *uart = 'M'; *uart = 'M'; *uart = 'U'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
+    *uart = '\r'; *uart = '\n';
+    
+    // Enable MMU translation (replacing msr sctlr_el1, x28)
+    mmu_enable_translation();
+    
+    *uart = 'M'; *uart = 'M'; *uart = 'U'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // Resume assembly block for verification and continuation logic
+    asm volatile (
         // Assembly context verification: Check if MMU enable just executed successfully
         "mrs x29, sctlr_el1\n"       // Read SCTLR_EL1 in assembly context
         "and x0, x29, #0x1\n"        // Check if MMU bit is set
@@ -1677,7 +1651,7 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "3:\n"
         "b 3b\n"                     // Infinite loop
         
-        : // No outputs
+        : // No outputs from third assembly block
         : "r"(page_table_phys_ttbr0), // %0: page table base for TTBR0_EL1
           "r"(page_table_phys_ttbr1), // %1: page table base for TTBR1_EL1
           "r"(tcr),                  // %2: TCR_EL1 value

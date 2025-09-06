@@ -132,3 +132,4 @@ const char* mmu_decode_attr_index(uint64_t attr_idx);
 bool mmu_is_device_memory(uint64_t attr_idx);
 
 #endif /* MMU_POLICY_H */
+

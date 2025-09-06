@@ -1,5 +1,11 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
+September 4th, 2025
+
+Fixing MMU policy violations. Breaking up assembly block from mmu_core.c into pieces.
+
+Latest kernel log: https://docs.google.com/document/d/1T9nySCFBoppp0Ei_IczjAONa6gPZYs4AF7WuI8IexnI/edit?usp=sharing
+
 August 22nd, 2025
 
 Several potential root causes that I just RULED OUT:
