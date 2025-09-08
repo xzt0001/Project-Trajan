@@ -5,6 +5,7 @@
 #include "../include/string.h"
 #include "../include/debug.h"
 #include "../include/memory_config.h"
+#include "../include/mmu_policy.h"  // For centralized TLB operations
 
 // External variables and functions needed by debug functions
 extern MemoryMapping mappings[MAX_MAPPINGS];
@@ -417,11 +418,14 @@ void verify_code_is_executable(void) {
         *uart = '0' + i; // Index
     }
     
-    // Flush TLB to ensure changes take effect
-    __asm__ volatile("dsb ishst");
-    __asm__ volatile("tlbi vmalle1is");
-    __asm__ volatile("dsb ish");
-    __asm__ volatile("isb");
+    // Flush TLB to ensure changes take effect - REPLACED WITH POLICY LAYER
+    // __asm__ volatile("dsb ishst");
+    // __asm__ volatile("tlbi vmalle1is");  // ❌ POLICY VIOLATION - inner-shareable TLB invalidation
+    // __asm__ volatile("dsb ish");
+    // __asm__ volatile("isb");
+    
+    // ✅ POLICY LAYER: Use centralized TLB invalidation sequence
+    mmu_comprehensive_tlbi_sequence();
     
     *uart = 'O'; *uart = 'K'; *uart = '\r'; *uart = '\n';
 }
@@ -681,9 +685,12 @@ void verify_critical_mappings_before_mmu(uint64_t* page_table_base) {
             asm volatile("dc civac, %0" :: "r"(&l3_table[l3_idx]) : "memory");
             asm volatile("dsb ish" ::: "memory");
             
-            // Invalidate TLB for this specific address
-            asm volatile("tlbi vaae1is, %0" :: "r"(addr >> 12) : "memory");
-            asm volatile("dsb ish" ::: "memory");
+            // Invalidate TLB for this specific address - REPLACED WITH POLICY LAYER
+            // asm volatile("tlbi vaae1is, %0" :: "r"(addr >> 12) : "memory");  // ❌ POLICY VIOLATION - address-specific inner-shareable TLB invalidation
+            // asm volatile("dsb ish" ::: "memory");
+            
+            // ✅ POLICY LAYER: Use centralized TLB invalidation (comprehensive but safer)
+            mmu_comprehensive_tlbi_sequence();
             
             *uart = '>';
         }

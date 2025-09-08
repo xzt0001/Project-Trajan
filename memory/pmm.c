@@ -6,6 +6,7 @@
 #include "../include/memory_config.h"
 #include "../include/debug.h"
 #include "../include/debug_config.h"
+#include "../include/mmu_policy.h"  // For centralized TLB operations
 
 // Declaration for debug_hex64 function from kernel/main.c
 extern void debug_hex64(const char* label, uint64_t value);
@@ -633,15 +634,21 @@ void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end,
         asm volatile("dc civac, %0" :: "r"(&l3_table[l3_idx]) : "memory");
         asm volatile("dsb ish" ::: "memory");
         
-        // Perform explicit TLB invalidation for this address
-        asm volatile("tlbi vaae1is, %0" :: "r"(virt_addr >> 12) : "memory");
-        asm volatile("dsb ish" ::: "memory");
+        // Perform explicit TLB invalidation for this address - REPLACED WITH POLICY LAYER
+        // asm volatile("tlbi vaae1is, %0" :: "r"(virt_addr >> 12) : "memory");  // ❌ POLICY VIOLATION - address-specific inner-shareable TLB invalidation
+        // asm volatile("dsb ish" ::: "memory");
+        
+        // ✅ POLICY LAYER: Use centralized TLB invalidation (per iteration - comprehensive but safe)
+        mmu_comprehensive_tlbi_sequence();
     }
     
-    // Final TLB invalidation after all updates
-    asm volatile("tlbi vmalle1is" ::: "memory");
-    asm volatile("dsb ish" ::: "memory");
-    asm volatile("isb" ::: "memory");
+    // Final TLB invalidation after all updates - REPLACED WITH POLICY LAYER
+    // asm volatile("tlbi vmalle1is" ::: "memory");  // ❌ POLICY VIOLATION - inner-shareable TLB invalidation
+    // asm volatile("dsb ish" ::: "memory");
+    // asm volatile("isb" ::: "memory");
+    
+    // ✅ POLICY LAYER: Final comprehensive TLB invalidation
+    mmu_comprehensive_tlbi_sequence();
     
     // Register the mapping for diagnostic purposes
     register_mapping(virt_start, virt_end, phys_start, flags, "Range mapping");
@@ -709,11 +716,14 @@ void map_kernel_page(uint64_t va, uint64_t pa, uint64_t flags) {
     // Map the page
     map_page(l3_table, va, pa, flags);
     
-    // Flush TLB to ensure changes take effect
-    __asm__ volatile("dsb ishst");
-    __asm__ volatile("tlbi vmalle1is");
-    __asm__ volatile("dsb ish");
-    __asm__ volatile("isb");
+    // Flush TLB to ensure changes take effect - REPLACED WITH POLICY LAYER
+    // __asm__ volatile("dsb ishst");
+    // __asm__ volatile("tlbi vmalle1is");  // ❌ POLICY VIOLATION - inner-shareable TLB invalidation
+    // __asm__ volatile("dsb ish");
+    // __asm__ volatile("isb");
+    
+    // ✅ POLICY LAYER: Use centralized TLB invalidation sequence
+    mmu_comprehensive_tlbi_sequence();
     
     debug_print("[PMM] Kernel page mapped successfully\n");
 }
@@ -782,10 +792,13 @@ void map_uart(void) {
     asm volatile("dc civac, %0" :: "r"(&l3_table[l3_idx]) : "memory");
     asm volatile("dsb ish" ::: "memory");
     
-    // Perform explicit TLB invalidation for this specific address
-    asm volatile("tlbi vaae1is, %0" :: "r"(UART_VIRT >> 12) : "memory");
-    asm volatile("dsb ish" ::: "memory");
-    asm volatile("isb" ::: "memory");
+    // Perform explicit TLB invalidation for this specific address - REPLACED WITH POLICY LAYER
+    // asm volatile("tlbi vaae1is, %0" :: "r"(UART_VIRT >> 12) : "memory");  // ❌ POLICY VIOLATION - address-specific inner-shareable TLB invalidation
+    // asm volatile("dsb ish" ::: "memory");
+    // asm volatile("isb" ::: "memory");
+    
+    // ✅ POLICY LAYER: Use centralized TLB invalidation sequence
+    mmu_comprehensive_tlbi_sequence();
     
     // Verify the mapping was set correctly
     uint64_t read_pte = l3_table[l3_idx];

@@ -7,6 +7,7 @@
 #include "memory_debug.h"
 #include "../include/uart.h"
 #include "../include/debug.h"
+#include "../include/mmu_policy.h"  // For centralized TLB operations
 
 // Global state tracking
 static bool mmu_initialization_attempted = false;
@@ -173,10 +174,13 @@ int addr_unmap_page(uint64_t virt_addr) {
                 uint64_t l3_idx = (virt_addr >> 12) & 0x1FF;
                 l3_table[l3_idx] = 0;
                 
-                // TLB invalidation
-                asm volatile("tlbi vaae1is, %0" :: "r"(virt_addr >> 12) : "memory");
-                asm volatile("dsb ish" ::: "memory");
-                asm volatile("isb" ::: "memory");
+                // TLB invalidation - REPLACED WITH POLICY LAYER
+                // asm volatile("tlbi vaae1is, %0" :: "r"(virt_addr >> 12) : "memory");  // ❌ POLICY VIOLATION - address-specific inner-shareable TLB invalidation
+                // asm volatile("dsb ish" ::: "memory");
+                // asm volatile("isb" ::: "memory");
+                
+                // ✅ POLICY LAYER: Use centralized TLB invalidation sequence
+                mmu_comprehensive_tlbi_sequence();
                 
                 *uart = 'U'; *uart = 'K'; // UK - Unmap OK
                 return 0;

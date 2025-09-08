@@ -1,5 +1,11 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
+September 8th 2025
+
+TLBI centralization across memory folder, all refering to mmu_comprehensive_tlbi_sequence.
+
+Latest kernel log: https://docs.google.com/document/d/1AjBIK2MI9r64eAikBE8lx5qIRo5jlnKyDbn_3F-DktM/edit?tab=t.0
+
 September 4th, 2025
 
 Fixing MMU policy violations. Breaking up assembly block from mmu_core.c into pieces.

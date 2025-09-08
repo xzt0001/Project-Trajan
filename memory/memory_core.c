@@ -427,23 +427,45 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         
         "dsb sy\n"                   // Wait for all cache operations
         
-        // PHASE 2: COMPREHENSIVE TLB INVALIDATION
+        // PHASE 2: TLB INVALIDATION - END ASSEMBLY BLOCK FOR POLICY LAYER
         "mov w27, #'P'\n"
         "str w27, [x26]\n"
         "mov w27, #'2'\n"
         "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
         
-        // Step 1: Invalidate all TLB entries for both address spaces
-        "tlbi vmalle1\n"             // Invalidate all stage 1 TLB entries (local)
-        "dsb nsh\n"                  // Data synchronization barrier (non-shareable)
-        "tlbi vmalle1is\n"           // Invalidate all stage 1 TLB entries (inner shareable)
-        "dsb ish\n"                  // Data synchronization barrier (inner shareable)
+        // End assembly block to call policy layer for TLB operations
         
-        // Step 2: Invalidate instruction cache to prevent stale instruction fetches
-        "ic iallu\n"                 // Invalidate instruction cache (all)
-        "dsb sy\n"                   // Wait for instruction cache invalidation
-        "isb\n"                      // Instruction synchronization barrier
-        
+        : // No outputs from assembly block part 2A
+        : "r"(page_table_phys_ttbr0), // %0: page table base for TTBR0_EL1
+          "r"(page_table_phys_ttbr1), // %1: page table base for TTBR1_EL1
+          "r"(tcr),                  // %2: TCR_EL1 value
+          "r"(mair),                 // %3: MAIR_EL1 value
+          "r"(continuation_phys),    // %4: continuation point (physical)
+          "r"(continuation_virt),    // %5: continuation point (virtual)
+          [page_mask] "r"(~0xFFFUL)  // %6: page mask for alignment
+        : "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "x0", "x1", "x2", "x3", "memory"
+    );
+    
+    // ❌ ORIGINAL TLB OPERATIONS - COMMENTED OUT FOR POLICY VIOLATION FIXES
+    // "tlbi vmalle1\n"             // ❌ LOCAL-ONLY VIOLATION - Invalidate all stage 1 TLB entries (local)
+    // "dsb nsh\n"                  // Data synchronization barrier (non-shareable)  
+    // "tlbi vmalle1is\n"           // ❌ INNER-SHAREABLE VIOLATION - Invalidate all stage 1 TLB entries (inner shareable)
+    // "dsb ish\n"                  // Data synchronization barrier (inner shareable)
+    // "ic iallu\n"                 // Invalidate instruction cache (all)
+    // "dsb sy\n"                   // Wait for instruction cache invalidation
+    // "isb\n"                      // Instruction synchronization barrier
+    
+    // ✅ POLICY LAYER: Use centralized TLB invalidation sequence  
+    *uart = 'T'; *uart = 'L'; *uart = 'B'; *uart = '1'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
+    *uart = '\r'; *uart = '\n';
+    mmu_comprehensive_tlbi_sequence();
+    *uart = 'T'; *uart = 'L'; *uart = 'B'; *uart = '1'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // Resume assembly block for MMU enable operations
+    asm volatile (
         // Enable MMU - CONSERVATIVE APPROACH WITH MULTI-STAGE BARRIERS
         
         // CRITICAL: Get PC right before MMU enable and ensure mapping
@@ -949,14 +971,48 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "add w27, w29, #'0'\n"       // Convert to ASCII (should be '1')
         "str w27, [x26]\n"
         
-        // CRITICAL: Comprehensive cache and TLB maintenance before minimal test
-        "dsb sy\n"                   // Full system data synchronization
-        "tlbi vmalle1\n"             // Invalidate all TLB entries
-        "dsb ish\n"                  // Data synchronization barrier (inner shareable)
-        "ic iallu\n"                 // Invalidate instruction cache
-        "dsb sy\n"                   // Wait for instruction cache invalidation
-        "isb\n"                      // Instruction synchronization barrier
+        // CRITICAL: TLB maintenance - END ASSEMBLY BLOCK FOR POLICY LAYER
+        "mov w27, #'T'\n"            // 'T' = TLB
+        "str w27, [x26]\n"
+        "mov w27, #'L'\n"            // 'L' = tLb
+        "str w27, [x26]\n"
+        "mov w27, #'B'\n"            // 'B' = tlB
+        "str w27, [x26]\n"
+        "mov w27, #'2'\n"            // '2' = Second TLB operation
+        "str w27, [x26]\n"
+        "mov w27, #':'\n"
+        "str w27, [x26]\n"
         
+        // End assembly block to call policy layer for second TLB operation
+        
+        : // No outputs from assembly block part 2B  
+        : "r"(page_table_phys_ttbr0), // %0: page table base for TTBR0_EL1
+          "r"(page_table_phys_ttbr1), // %1: page table base for TTBR1_EL1
+          "r"(tcr),                  // %2: TCR_EL1 value
+          "r"(mair),                 // %3: MAIR_EL1 value
+          "r"(continuation_phys),    // %4: continuation point (physical)
+          "r"(continuation_virt),    // %5: continuation point (virtual)
+          [page_mask] "r"(~0xFFFUL)  // %6: page mask for alignment
+        : "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "x0", "x1", "x2", "x3", "memory"
+    );
+    
+    // ❌ ORIGINAL TLB OPERATIONS - COMMENTED OUT FOR POLICY VIOLATION FIXES
+    // "dsb sy\n"                   // Full system data synchronization
+    // "tlbi vmalle1\n"             // ❌ LOCAL-ONLY VIOLATION - Invalidate all TLB entries  
+    // "dsb ish\n"                  // Data synchronization barrier (inner shareable)
+    // "ic iallu\n"                 // Invalidate instruction cache
+    // "dsb sy\n"                   // Wait for instruction cache invalidation
+    // "isb\n"                      // Instruction synchronization barrier
+    
+    // ✅ POLICY LAYER: Use centralized TLB invalidation sequence
+    *uart = 'T'; *uart = 'L'; *uart = 'B'; *uart = '2'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
+    *uart = '\r'; *uart = '\n';
+    mmu_comprehensive_tlbi_sequence();
+    *uart = 'T'; *uart = 'L'; *uart = 'B'; *uart = '2'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // Resume assembly block for minimal MMU enable test
+    asm volatile (
         // TEST 1: Try minimal MMU enable (MMU bit only, no caches)
         "mov w27, #'T'\n"            // 'T' = Test
         "str w27, [x26]\n"

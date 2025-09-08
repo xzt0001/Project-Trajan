@@ -7,6 +7,7 @@
 #include "../include/memory_config.h"
 #include "memory_debug.h"
 #include "../include/memory_core.h"
+#include "../include/mmu_policy.h"  // For centralized TLB operations
 
 // Prototypes for diagnostic helpers
 uint64_t read_mair_el1(void);
@@ -398,14 +399,17 @@ void map_code_section(void) {
     
     uart_puts("[VMM] Code section mapping complete\n");
     
-    // Flush TLB to ensure changes take effect
-    asm volatile (
-        "dsb ishst\n"
-        "tlbi vmalle1is\n"
-        "dsb ish\n"
-        "isb\n"
-        ::: "memory"
-    );
+    // Flush TLB to ensure changes take effect - REPLACED WITH POLICY LAYER
+    // asm volatile (
+    //     "dsb ishst\n"
+    //     "tlbi vmalle1is\n"        // ❌ POLICY VIOLATION - inner-shareable TLB invalidation
+    //     "dsb ish\n"
+    //     "isb\n"
+    //     ::: "memory"
+    // );
+    
+    // ✅ POLICY LAYER: Use centralized TLB invalidation sequence
+    mmu_comprehensive_tlbi_sequence();
 }
 
 // Map vector_table with proper executable permissions
@@ -865,19 +869,23 @@ void map_mmu_transition_code(void) {
     *uart = 'V'; *uart = 'E'; *uart = 'R'; *uart = 'I'; *uart = 'F'; *uart = ':'; *uart = 'O'; *uart = 'K';
     *uart = '\r'; *uart = '\n';
     
-    // Enhanced TLB invalidation
+    // Enhanced TLB invalidation - REPLACED WITH POLICY LAYER
     *uart = 'T'; *uart = 'L'; *uart = 'B'; *uart = ':';
     *uart = '\r'; *uart = '\n';
     
-    asm volatile(
-        "dsb sy\n"              // System-wide data synchronization (single-core safe)
-        "tlbi vmalle1\n"        // Invalidate TLB entries for EL1 (local core only)
-        "dsb sy\n"              // Wait for TLB invalidation completion (system-wide)
-        "ic iallu\n"            // Invalidate instruction cache (already local)
-        "dsb sy\n"              // Wait for instruction cache invalidation (system-wide)
-        "isb\n"                 // Instruction synchronization barrier
-        ::: "memory"
-    );
+    // ❌ ORIGINAL TLB OPERATIONS - COMMENTED OUT FOR POLICY VIOLATION FIXES
+    // asm volatile(
+    //     "dsb sy\n"              // System-wide data synchronization (single-core safe)
+    //     "tlbi vmalle1\n"        // ❌ LOCAL-ONLY VIOLATION - Invalidate TLB entries for EL1 (local core only)
+    //     "dsb sy\n"              // Wait for TLB invalidation completion (system-wide)
+    //     "ic iallu\n"            // Invalidate instruction cache (already local)
+    //     "dsb sy\n"              // Wait for instruction cache invalidation (system-wide)
+    //     "isb\n"                 // Instruction synchronization barrier
+    //     ::: "memory"
+    // );
+    
+    // ✅ POLICY LAYER: Use centralized TLB invalidation sequence
+    mmu_comprehensive_tlbi_sequence();
     
     *uart = 'T'; *uart = 'L'; *uart = 'B'; *uart = ':'; *uart = 'O'; *uart = 'K';
     *uart = '\r'; *uart = '\n';
@@ -1223,10 +1231,13 @@ void ensure_vector_table_executable_l3(uint64_t* l3_table) {
         asm volatile("dc civac, %0" :: "r"(&l3_table[l3_idx]) : "memory");
         asm volatile("dsb ish" ::: "memory");
         
-        // Invalidate TLB for this address
-        asm volatile("tlbi vaae1is, %0" :: "r"(vbar_virt >> 12) : "memory");
-        asm volatile("dsb ish" ::: "memory");
-        asm volatile("isb" ::: "memory");
+        // Invalidate TLB for this address - REPLACED WITH POLICY LAYER
+        // asm volatile("tlbi vaae1is, %0" :: "r"(vbar_virt >> 12) : "memory");  // ❌ POLICY VIOLATION - address-specific inner-shareable TLB invalidation
+        // asm volatile("dsb ish" ::: "memory");
+        // asm volatile("isb" ::: "memory");
+        
+        // ✅ POLICY LAYER: Use centralized TLB invalidation sequence
+        mmu_comprehensive_tlbi_sequence();
         
         uart_puts_early("[VMM] Made vector table executable: 0x");
         uart_hex64_early(vbar_virt);

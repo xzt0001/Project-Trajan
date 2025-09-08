@@ -1,5 +1,6 @@
 #include "../../../include/types.h"
 #include "../../../include/uart.h"
+#include "../../../include/mmu_policy.h"  // For centralized TLB operations
 
 // Explicitly reference the global UART base pointer defined in uart.c
 extern volatile uint32_t* g_uart_base;
@@ -71,15 +72,18 @@ void uart_puts_safe_indexed(const char *str) {
     // Complete memory barrier and TLB invalidation sequence
     asm volatile("dsb ish" ::: "memory");     // Ensure all memory operations complete
     
-    // Invalidate TLB entries for the buffer region
-    uintptr_t buffer_start = ((uintptr_t)&mmu_msg[0]) >> 12;
-    asm volatile("tlbi vaae1is, %0" :: "r" (buffer_start) : "memory");
+    // Invalidate TLB entries for the buffer region - REPLACED WITH POLICY LAYER
+    // uintptr_t buffer_start = ((uintptr_t)&mmu_msg[0]) >> 12;
+    // asm volatile("tlbi vaae1is, %0" :: "r" (buffer_start) : "memory");  // ❌ POLICY VIOLATION - device driver should not manage TLB
     
-    // Also invalidate for any potential string source in case it's in a newly mapped region
-    if (str != NULL) {
-        uintptr_t source_page = ((uintptr_t)str) >> 12;
-        asm volatile("tlbi vaae1is, %0" :: "r" (source_page) : "memory");
-    }
+    // Also invalidate for any potential string source in case it's in a newly mapped region - REPLACED WITH POLICY LAYER
+    // if (str != NULL) {
+    //     uintptr_t source_page = ((uintptr_t)str) >> 12;
+    //     asm volatile("tlbi vaae1is, %0" :: "r" (source_page) : "memory");  // ❌ POLICY VIOLATION - device driver should not manage TLB
+    // }
+    
+    // ✅ POLICY LAYER: Use centralized TLB invalidation sequence (device drivers should use system-level TLB management)
+    mmu_comprehensive_tlbi_sequence();
     
     // Flush instruction cache as well to ensure coherency
     asm volatile("ic ialluis" ::: "memory");
