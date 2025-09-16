@@ -275,45 +275,33 @@ void mmu_set_ttbr_bases(uint64_t ttbr0_base, uint64_t ttbr1_base) {
 }
 
 void mmu_comprehensive_tlbi_sequence(void) {
-    // TLB:CONSERV
     volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
-    *uart = 'T'; *uart = 'L'; *uart = 'B'; *uart = ':'; *uart = 'C'; *uart = 'O'; *uart = 'N'; *uart = 'S'; *uart = 'E'; *uart = 'R'; *uart = 'V';
-    *uart = '\r'; *uart = '\n';
     
-    // Conservative TLB invalidation sequence
-    // Extracted from memory_debug.c:707-730
+    // Compact single-line format: TLB:12345OK (12 chars vs 7 lines!)
+    *uart = 'T'; *uart = 'L'; *uart = 'B'; *uart = ':';
     
     // Step 1: Basic data synchronization
-    *uart = 'S'; *uart = '1'; *uart = ':'; *uart = 'D'; *uart = 'S'; *uart = 'B';
     __asm__ volatile("dsb sy" ::: "memory");  // System-wide
-    *uart = 'O'; *uart = 'K';
-    *uart = '\r'; *uart = '\n';
+    *uart = '1';
     
     // Step 2: Local TLB invalidation (no inner-shareable domain)
-    *uart = 'S'; *uart = '2'; *uart = ':'; *uart = 'T'; *uart = 'L'; *uart = 'B'; *uart = 'L';
     __asm__ volatile("tlbi vmalle1" ::: "memory");  // Local core only
-    *uart = 'O'; *uart = 'K';
-    *uart = '\r'; *uart = '\n';
+    *uart = '2';
     
     // Step 3: Wait for TLB operation completion
-    *uart = 'S'; *uart = '3'; *uart = ':'; *uart = 'W'; *uart = 'A'; *uart = 'I'; *uart = 'T';
     __asm__ volatile("dsb nsh" ::: "memory");  // Non-shareable domain only
-    *uart = 'O'; *uart = 'K';
-    *uart = '\r'; *uart = '\n';
+    *uart = '3';
     
     // Step 4: Skip instruction cache invalidation (often problematic)
-    *uart = 'S'; *uart = '4'; *uart = ':'; *uart = 'S'; *uart = 'K'; *uart = 'I'; *uart = 'P';
-    *uart = 'O'; *uart = 'K';
-    *uart = '\r'; *uart = '\n';
+    *uart = '4';
     
     // Step 5: Final barrier
-    *uart = 'S'; *uart = '5'; *uart = ':'; *uart = 'I'; *uart = 'S'; *uart = 'B';
     __asm__ volatile("isb" ::: "memory");
-    *uart = 'O'; *uart = 'K';
-    *uart = '\r'; *uart = '\n';
+    *uart = '5';
     
-    *uart = 'T'; *uart = 'L'; *uart = 'B'; *uart = ':'; *uart = 'O'; *uart = 'K';
-    *uart = '\r'; *uart = '\n';
+    // Completion marker
+    *uart = 'O'; *uart = 'K';
+    // No newline - keeps output compact on same line
 }
 
 void mmu_enable_translation(void) {

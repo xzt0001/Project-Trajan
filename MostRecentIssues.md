@@ -1,5 +1,15 @@
 Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
 
+September 16th 2025
+
+Identified a fundamential mismatch: executing with PC in TTBR0 half(low VA) while policy disabbles TTBR0(EPD0 = 1) and keep TTBR1 enabled for the kernel.
+
+Evidence:
+Critical PC before MMU enable: CPC:B68C
+Source: Assembly code in memory_core.c: 472-519 showing the lower 16 bits of the PC, which based on assembly block location, full address should be 0x4008B68C, and that's also TTBR0's address space.
+
+Latest kernel log: https://docs.google.com/document/d/12J2vBiTDT0yyNiPk4ZhkNPDOOEs0AsMACsI1mfxeC1Q/edit?usp=sharing 
+
 September 8th 2025
 
 TLBI centralization across memory folder, all refering to mmu_comprehensive_tlbi_sequence.
