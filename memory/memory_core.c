@@ -14,13 +14,18 @@ extern uint64_t* l0_table_ttbr1;
 extern uint64_t saved_vector_table_addr;
 
 // Forward declarations for functions used by enable_mmu_enhanced()
-extern void mmu_continuation_point(void);
+extern void mmu_trampoline_continuation_point(void);
 extern uint64_t* get_l3_table_for_addr(uint64_t* l0_table, uint64_t virt_addr);
 extern void verify_critical_mappings_before_mmu(uint64_t* page_table_base);
 extern void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end, 
                       uint64_t phys_start, uint64_t flags);
 extern void register_mapping(uint64_t virt_start, uint64_t virt_end, uint64_t phys_start, 
                             uint64_t flags, const char* name);
+
+// Dual-mapping function for trampoline support
+void map_range_dual_trampoline(uint64_t* l0_table_ttbr0, uint64_t* l0_table_ttbr1,
+                               uint64_t virt_low, uint64_t virt_high, 
+                               uint64_t phys, uint64_t size);
 extern char vector_table[];
 
 // System register access functions
@@ -136,6 +141,30 @@ uint64_t* get_kernel_l3_table(void) {
     }
     
     return l3_table;
+}
+
+// Dual-mapping implementation for trampoline support
+void map_range_dual_trampoline(uint64_t* l0_table_ttbr0, uint64_t* l0_table_ttbr1,
+                               uint64_t virt_low, uint64_t virt_high, 
+                               uint64_t phys, uint64_t size) {
+    volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
+    
+    // Debug output
+    *uart = 'D'; *uart = 'U'; *uart = 'A'; *uart = 'L'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
+    *uart = '\r'; *uart = '\n';
+    
+    // Map to TTBR0 space (low virtual address - current PC space)
+    map_range(l0_table_ttbr0, virt_low, virt_low + size, phys, PTE_KERN_TEXT);
+    *uart = 'D'; *uart = 'L'; *uart = 'O'; *uart = 'W'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // Map to TTBR1 space (high virtual address - kernel space)  
+    map_range(l0_table_ttbr1, virt_high, virt_high + size, phys, PTE_KERN_TEXT);
+    *uart = 'D'; *uart = 'H'; *uart = 'I'; *uart = 'G'; *uart = 'H'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    *uart = 'D'; *uart = 'U'; *uart = 'A'; *uart = 'L'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
 }
 
 // Enhanced function to enable the MMU with improved robustness
@@ -317,6 +346,22 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     map_range(page_table_base, assembly_page_start, assembly_page_end, assembly_page_start, PTE_KERN_TEXT);
     
     *uart = 'A'; *uart = 'M'; *uart = 'A'; *uart = 'P'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // TRAMPOLINE SETUP: Dual-map trampoline section for atomic PC transition
+    extern void mmu_trampoline_low(void);
+    extern uint64_t _trampoline_section_size;
+    uint64_t tramp_phys = (uint64_t)&mmu_trampoline_low;
+    uint64_t tramp_size = (uint64_t)&_trampoline_section_size;
+    uint64_t tramp_high = HIGH_VIRT_BASE + tramp_phys;
+    
+    *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'M'; *uart = 'P'; *uart = ':'; *uart = 'S'; *uart = 'E'; *uart = 'T'; *uart = 'U'; *uart = 'P';
+    *uart = '\r'; *uart = '\n';
+    
+    // Dual-map trampoline at both TTBR0 and TTBR1 addresses
+    map_range_dual_trampoline(page_table_base, l0_table_ttbr1, tramp_phys, tramp_high, tramp_phys, tramp_size);
+    
+    *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'M'; *uart = 'P'; *uart = ':'; *uart = 'O'; *uart = 'K';
     *uart = '\r'; *uart = '\n';
     
     // POLICY LAYER: Pre-enable barrier sequence (eliminates duplication)
@@ -1386,10 +1431,15 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     *uart = 'M'; *uart = 'M'; *uart = 'U'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
     *uart = '\r'; *uart = '\n';
     
-    // Enable MMU translation (replacing msr sctlr_el1, x28)
-    mmu_enable_translation();
+    // Jump to trampoline for atomic PC transition TTBR0→TTBR1
+    *uart = 'J'; *uart = 'M'; *uart = 'P'; *uart = ':'; *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'M'; *uart = 'P';
+    *uart = '\r'; *uart = '\n';
     
-    *uart = 'M'; *uart = 'M'; *uart = 'U'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    // Assembly jump to trampoline (will not return here)
+    asm volatile("b mmu_trampoline_low");
+    
+    // We should never reach this point
+    *uart = 'E'; *uart = 'R'; *uart = 'R'; *uart = ':'; *uart = 'U'; *uart = 'N'; *uart = 'R'; *uart = 'E'; *uart = 'A'; *uart = 'C'; *uart = 'H';
     *uart = '\r'; *uart = '\n';
     
     // Resume assembly block for verification and continuation logic
@@ -1726,4 +1776,35 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     *uart = '\r'; *uart = '\n';
 
 #endif // TEST_POLICY_APPROACH
+}
+
+/**
+ * @brief Post-MMU continuation point running in TTBR1 high virtual space
+ * 
+ * This function is called after MMU enable from the trampoline.
+ * It runs in high virtual address space and finalizes the MMU transition.
+ */
+__attribute__((noinline))
+void mmu_trampoline_continuation_point(void) {
+    volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
+    
+    // Debug marker: We're in the continuation point
+    *uart = 'C'; *uart = 'O'; *uart = 'N'; *uart = 'T'; *uart = ':'; *uart = 'E'; *uart = 'N'; *uart = 'T'; *uart = 'E'; *uart = 'R';
+    *uart = '\r'; *uart = '\n';
+    
+    // Set EPD for runtime kernel-only mode (EPD0=1, EPD1=0)
+    mmu_policy_set_epd_runtime_kernel();
+    
+    *uart = 'C'; *uart = 'O'; *uart = 'N'; *uart = 'T'; *uart = ':'; *uart = 'E'; *uart = 'P'; *uart = 'D'; *uart = '+';
+    *uart = '\r'; *uart = '\n';
+    
+    // Optional: Switch UART to virtual mapping in the future
+    // This would require updating all UART access to use virtual addresses
+    // uart_set_base(UART_VIRT);
+    
+    *uart = 'C'; *uart = 'O'; *uart = 'N'; *uart = 'T'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // MMU transition is now complete
+    // Return to caller will continue normal boot flow in high virtual space
 } 

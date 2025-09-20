@@ -1,4 +1,11 @@
-Here are the most up to date info about my development progress focusing on low level debugging. My medium blog posts are hard to write, cause I have to dilute over 100 pages debugging journal into a 5mins read blog post. I will post regular updates here about the most up to date problems that I'm dealing with.
+Here are the most up to date info about my development progress focusing on low level debugging. 
+
+
+September 20th 2025
+
+I implemented a fix which lets the CPU flip the MMU on while already executing in TTBR1 (via the dual-mapped trampoline and EPD staging). I believe this removes the old “fetch from a disabled TTBR0” crash, so the boot now advances into memory-management code that never ran before. That code prints a line for thousands of pages (PMM scans, mapping dumps, etc.), which is why the UART is now flooded with hex addresses.
+
+Latest kernel log: https://docs.google.com/document/d/1tQynkcX1iV-GyAi0jAjUIVZ2a1Xaqrk6yiAQTPsdmeA/edit?usp=sharing
 
 September 16th 2025
 

@@ -37,6 +37,7 @@
     #define DEBUG_MARKERS_KMV_ENABLED      // 'K', 'M', 'V' markers
     #define DEBUG_MARKERS_EXTRA_ENABLED    // Additional debug markers
     #define DEBUG_TIMING_DELAYS_ENABLED    // UART delays for readability
+    #define DEBUG_MEMORY_MAPPING_VERBOSE   // Per-page memory mapping debug
 #endif
 
 #ifdef DEBUG_BOOT_MODERATE
@@ -44,6 +45,7 @@
     #define DEBUG_MARKERS_CD_ENABLED
     #define DEBUG_MARKERS_KMV_ENABLED
     #define DEBUG_TIMING_DELAYS_ENABLED
+    #define DEBUG_MEMORY_MAPPING_SUMMARY   // Summary-only memory mapping debug
     // No test patterns
 #endif
 
@@ -95,6 +97,18 @@
     #define DEBUG_UART_DELAY() uart_delay_short()
 #else
     #define DEBUG_UART_DELAY() do { } while(0)
+#endif
+
+// Memory mapping debug controls
+#ifdef DEBUG_MEMORY_MAPPING_VERBOSE
+    #define DEBUG_MEMORY_MAPPING_ENABLED 1
+    #define DEBUG_MEMORY_MAPPING_PER_PAGE 1
+#elif defined(DEBUG_MEMORY_MAPPING_SUMMARY)
+    #define DEBUG_MEMORY_MAPPING_ENABLED 1
+    #define DEBUG_MEMORY_MAPPING_PER_PAGE 0
+#else
+    #define DEBUG_MEMORY_MAPPING_ENABLED 0
+    #define DEBUG_MEMORY_MAPPING_PER_PAGE 0
 #endif
 
 // ============================================================================

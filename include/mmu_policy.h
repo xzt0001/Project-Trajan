@@ -67,6 +67,22 @@ void mmu_set_ttbr_bases(uint64_t ttbr0_base, uint64_t ttbr1_base);
 void mmu_comprehensive_tlbi_sequence(void);
 
 /**
+ * @brief Comprehensive TLB invalidation with verbose debug output
+ * 
+ * Same as mmu_comprehensive_tlbi_sequence but with detailed debug markers.
+ * Use for critical MMU operations where you need detailed feedback.
+ */
+void mmu_comprehensive_tlbi_sequence_verbose(void);
+
+/**
+ * @brief Comprehensive TLB invalidation without debug output
+ * 
+ * Same TLB operations as the verbose version but silent.
+ * Use for bulk operations to avoid flooding the console.
+ */
+void mmu_comprehensive_tlbi_sequence_quiet(void);
+
+/**
  * @brief Enable MMU translation (SCTLR_EL1.M=1)
  * 
  * Performs the final MMU enable step:
@@ -74,6 +90,26 @@ void mmu_comprehensive_tlbi_sequence(void);
  * - Mandatory ISB after SCTLR_EL1 write
  */
 void mmu_enable_translation(void);
+
+/**
+ * @brief Set EPD for bootstrap dual-table mode
+ * 
+ * Configure TCR_EL1 for bootstrap phase:
+ * - EPD0=0 (enable TTBR0 walks) 
+ * - EPD1=0 (enable TTBR1 walks)
+ * Allows safe transition with both address spaces active.
+ */
+void mmu_policy_set_epd_bootstrap_dual(void);
+
+/**
+ * @brief Set EPD for runtime kernel-only mode
+ * 
+ * Configure TCR_EL1 for runtime phase:
+ * - EPD0=1 (disable TTBR0 walks)
+ * - EPD1=0 (enable TTBR1 walks) 
+ * Standard kernel configuration after MMU transition.
+ */
+void mmu_policy_set_epd_runtime_kernel(void);
 
 /**
  * @brief Apply complete MMU policy and enable translation

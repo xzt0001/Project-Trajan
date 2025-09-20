@@ -275,6 +275,11 @@ void mmu_set_ttbr_bases(uint64_t ttbr0_base, uint64_t ttbr1_base) {
 }
 
 void mmu_comprehensive_tlbi_sequence(void) {
+    // Call the verbose version for backward compatibility
+    mmu_comprehensive_tlbi_sequence_verbose();
+}
+
+void mmu_comprehensive_tlbi_sequence_verbose(void) {
     volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
     
     // Compact single-line format: TLB:12345OK (12 chars vs 7 lines!)
@@ -302,6 +307,14 @@ void mmu_comprehensive_tlbi_sequence(void) {
     // Completion marker
     *uart = 'O'; *uart = 'K';
     // No newline - keeps output compact on same line
+}
+
+void mmu_comprehensive_tlbi_sequence_quiet(void) {
+    // Same TLB operations but no debug output
+    __asm__ volatile("dsb sy" ::: "memory");
+    __asm__ volatile("tlbi vmalle1" ::: "memory");
+    __asm__ volatile("dsb nsh" ::: "memory");
+    __asm__ volatile("isb" ::: "memory");
 }
 
 void mmu_enable_translation(void) {
@@ -334,6 +347,21 @@ void mmu_enable_translation(void) {
         *uart = 'M'; *uart = 'M'; *uart = 'U'; *uart = ':'; *uart = 'F'; *uart = 'A'; *uart = 'I'; *uart = 'L';
         *uart = '\r'; *uart = '\n';
     }
+}
+
+void mmu_policy_set_epd_bootstrap_dual(void) {
+    // Keep all existing settings, only touch EPD bits.
+    uint64_t tcr; __asm__ volatile("mrs %0, tcr_el1" : "=r"(tcr));
+    tcr &= ~((1ULL<<7) | (1ULL<<23)); // clear EPD0, EPD1
+    // EPD0=0, EPD1=0  (both walks enabled)
+    __asm__ volatile("msr tcr_el1, %0\nisb" :: "r"(tcr) : "memory");
+}
+
+void mmu_policy_set_epd_runtime_kernel(void) {
+    uint64_t tcr; __asm__ volatile("mrs %0, tcr_el1" : "=r"(tcr));
+    tcr |=  (1ULL<<7);                // EPD0=1 (disable TTBR0 walks)
+    tcr &= ~(1ULL<<23);               // EPD1=0 (enable TTBR1 walks)
+    __asm__ volatile("msr tcr_el1, %0\nisb" :: "r"(tcr) : "memory");
 }
 
 int mmu_apply_policy_and_enable(uint64_t ttbr0_base, uint64_t ttbr1_base) {

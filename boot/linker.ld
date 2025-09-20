@@ -26,6 +26,9 @@ SECTIONS {
     /* Regular code section - ensure 8-byte alignment for all functions */
     .text : ALIGN(0x1000) { 
         *(.text)           /* Regular text section */
+        . = ALIGN(2048);   /* 2KB align for trampoline */
+        *(.text.tramp)     /* MMU trampoline section */
+        . = ALIGN(2048);   /* Maintain alignment after */
     } :text
     
     /* Other text sections (except vectors) */

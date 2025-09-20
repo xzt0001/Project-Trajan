@@ -73,7 +73,8 @@ MEMORY_OBJS := memory/pmm.o \
                memory/memory_core.o \
                memory/memory_debug.o \
                memory/address_space.o \
-               memory/mmu_policy.o
+               memory/mmu_policy.o \
+               memory/trampoline.o
 
 # Combine all object files
 OBJS := $(BOOT_OBJS) \
@@ -263,5 +264,8 @@ memory/memory_debug.o: memory/memory_debug.c
 
 memory/address_space.o: memory/address_space.c
 	$(CC) $(CFLAGS) -c memory/address_space.c -o memory/address_space.o
+
+memory/trampoline.o: memory/trampoline.S
+	$(AS) $(ASFLAGS) memory/trampoline.S -o memory/trampoline.o
 
 .PHONY: all clean

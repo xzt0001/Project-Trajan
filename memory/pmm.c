@@ -573,19 +573,23 @@ void map_page(uint64_t* l3_table, uint64_t va, uint64_t pa, uint64_t flags) {
  */
 void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end, 
                uint64_t phys_start, uint64_t flags) {
+    // Calculate the number of pages
+    uint64_t size = virt_end - virt_start;
+    uint64_t num_pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    
+    #if DEBUG_MEMORY_MAPPING_ENABLED
     uart_puts_early("[PMM] Mapping VA 0x");
     uart_hex64_early(virt_start);
     uart_puts_early(" - 0x");
     uart_hex64_early(virt_end);
     uart_puts_early(" to PA 0x");
     uart_hex64_early(phys_start);
-    uart_puts_early(" with flags 0x");
+    uart_puts_early(" (");
+    uart_hex64_early(num_pages);
+    uart_puts_early(" pages) flags=0x");
     uart_hex64_early(flags);
     uart_puts_early("\n");
-    
-    // Calculate the number of pages
-    uint64_t size = virt_end - virt_start;
-    uint64_t num_pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    #endif
     
     // Map each page
     for (uint64_t i = 0; i < num_pages; i++) {
@@ -597,15 +601,21 @@ void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end,
         if (virt_addr >= HIGH_VIRT_BASE) {
             // High virtual address - use TTBR1 page table
             page_table_to_use = l0_table_ttbr1;
+            
+            #if DEBUG_MEMORY_MAPPING_PER_PAGE
             uart_puts_early("[PMM] Using TTBR1 page table for high VA 0x");
             uart_hex64_early(virt_addr);
             uart_puts_early("\n");
+            #endif
         } else {
             // Low virtual address - use TTBR0 page table (passed parameter)
             page_table_to_use = l0_table;
+            
+            #if DEBUG_MEMORY_MAPPING_PER_PAGE
             uart_puts_early("[PMM] Using TTBR0 page table for low VA 0x");
             uart_hex64_early(virt_addr);
             uart_puts_early("\n");
+            #endif
         }
         
         // Create/get L3 table for the virtual address
@@ -638,8 +648,8 @@ void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end,
         // asm volatile("tlbi vaae1is, %0" :: "r"(virt_addr >> 12) : "memory");  // ❌ POLICY VIOLATION - address-specific inner-shareable TLB invalidation
         // asm volatile("dsb ish" ::: "memory");
         
-        // ✅ POLICY LAYER: Use centralized TLB invalidation (per iteration - comprehensive but safe)
-        mmu_comprehensive_tlbi_sequence();
+        // ✅ OPTIMIZATION: Skip per-page TLB invalidation - do bulk invalidation at end instead
+        // mmu_comprehensive_tlbi_sequence();  // ❌ REMOVED: Causes excessive debug output
     }
     
     // Final TLB invalidation after all updates - REPLACED WITH POLICY LAYER
@@ -647,8 +657,15 @@ void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end,
     // asm volatile("dsb ish" ::: "memory");
     // asm volatile("isb" ::: "memory");
     
-    // ✅ POLICY LAYER: Final comprehensive TLB invalidation
-    mmu_comprehensive_tlbi_sequence();
+    volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
+    *uart = 'B'; *uart = 'U'; *uart = 'L'; *uart = 'K'; *uart = ':'; *uart = 'T'; *uart = 'L'; *uart = 'B';
+    *uart = '\r'; *uart = '\n';
+    
+    // ✅ POLICY LAYER: Single bulk TLB invalidation after mapping all pages (MUCH more efficient!)
+    mmu_comprehensive_tlbi_sequence_quiet();  // Use quiet version to avoid console flooding
+    
+    *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
     
     // Register the mapping for diagnostic purposes
     register_mapping(virt_start, virt_end, phys_start, flags, "Range mapping");
