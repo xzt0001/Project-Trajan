@@ -122,7 +122,9 @@ mmu_trampoline_high:
 
 _trampoline_section_end:
 
-// Export section size for C code
+// Export section size for C code in regular data section
+.section .data
+.align 3
 .global _trampoline_section_size
 _trampoline_section_size:
     .quad (_trampoline_section_end - _trampoline_section_start)

@@ -239,6 +239,8 @@ void register_mapping(uint64_t virt_start, uint64_t virt_end, uint64_t phys_star
 /** MMU control functions */
 void enable_mmu(uint64_t* page_table_base);
 void enable_mmu_enhanced(uint64_t* page_table_base);
+void map_vector_table_dual(uint64_t* l0_table_ttbr0, uint64_t* l0_table_ttbr1, 
+                           uint64_t vector_addr);
 void verify_critical_mappings_before_mmu(uint64_t* page_table_base);
 void enhanced_cache_maintenance(void);
 

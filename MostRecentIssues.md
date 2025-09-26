@@ -1,6 +1,20 @@
 Here are the most up to date info about my development progress focusing on low level debugging. 
 
 
+September 26th, 2025
+
+Successfully get rid of the massive hex dump. Now the problem appears to be an address mismatch of vector table.
+
+I initially tried to create a dual mapping which created two copies of the vector table at the wrong address:
+TTBR0 mapping: 0x41000000 → vector table
+TTBR1 mapping: 0xFFFF800041000000 → vector table
+
+But CPU still jumps to 0x01000000 where nothing exists.
+
+Next step would likely involve repointing VBAR to where I mapped.
+
+Latest kernel log: https://docs.google.com/document/d/1RIj3WxnEKWB1h_YYPwYR_e2hH1mMqQPRrA4Nok5xhRc/edit?usp=sharing 
+
 September 20th 2025
 
 I implemented a fix which lets the CPU flip the MMU on while already executing in TTBR1 (via the dual-mapped trampoline and EPD staging). I believe this removes the old “fetch from a disabled TTBR0” crash, so the boot now advances into memory-management code that never ran before. That code prints a line for thousands of pages (PMM scans, mapping dumps, etc.), which is why the UART is now flooded with hex addresses.

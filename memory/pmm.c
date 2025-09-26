@@ -75,13 +75,13 @@ static void set_page_bit(uint64_t addr, int used) {
     }
     
     // Debug output for significant pages
-    if (page_idx < 8 || page_idx > (0x40000000 / PAGE_SIZE) - 8) {
+    /*if (page_idx < 8 || page_idx > (0x40000000 / PAGE_SIZE) - 8) {
         debug_hex64("set_bit_addr", addr);
         debug_hex64("set_bit_page", page_idx);
         debug_hex64("set_bit_byte", byte_idx);
         debug_hex64("set_bit_bit", bit_idx);
         debug_hex64("set_bit_val", used);
-    }
+    }*/
     
     if (used) {
         page_bitmap[byte_idx] |= (1 << bit_idx);
@@ -182,7 +182,7 @@ void init_pmm_impl(void) {
     size_t bitmap_size = (total_pages + 7) / 8;  // Round up to bytes
 
     // Debug the key values
-    debug_hex64("page_bitmap @", (uintptr_t)page_bitmap);
+    /*debug_hex64("page_bitmap @", (uintptr_t)page_bitmap);
     debug_hex64("bitmap_size", bitmap_size);
     debug_hex64("kernel_end", (uintptr_t)__kernel_end);
     debug_hex64("total_pages", total_pages);
@@ -246,7 +246,7 @@ void init_pmm_impl(void) {
     // 7. Final debug output
     debug_hex64("total_pages", total_pages);
     debug_hex64("free_pages", free_pages);
-    debug_hex64("reserved_pages", reserved_pages);
+    debug_hex64("reserved_pages", reserved_pages);*/
     
     uart_putc('P');  // PMM initialization complete
 }
@@ -289,8 +289,8 @@ void* alloc_page(void) {
             record_allocation(addr, 1);
             
             // Debug output
-            debug_hex64("[PMM] alloc_page -> ", addr);
-            debug_hex64("[PMM] alloc #", pmm_stats.total_allocations);
+            //debug_hex64("[PMM] alloc_page -> ", addr);
+            //debug_hex64("[PMM] alloc #", pmm_stats.total_allocations);
 
             return (void*)addr;
         }
@@ -522,8 +522,11 @@ uint64_t* create_page_table(void) {
  * @param flags Page table entry flags
  */
 void map_page(uint64_t* l3_table, uint64_t va, uint64_t pa, uint64_t flags) {
+    volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
+    
     if (l3_table == NULL) {
-        uart_puts_early("[PMM] Error: L3 table is NULL in map_page\n");
+        // Debug: X = L3 table is NULL
+        *uart = 'X'; *uart = 'N'; *uart = 'U'; *uart = 'L'; *uart = 'L'; *uart = '\r'; *uart = '\n';
         return;
     }
     
@@ -531,11 +534,11 @@ void map_page(uint64_t* l3_table, uint64_t va, uint64_t pa, uint64_t flags) {
     if ((pa >= UART_PHYS && pa < (UART_PHYS + 0x1000)) ||
         (va >= UART_PHYS && va < (UART_PHYS + 0x1000))) {
         // Skip UART MMIO region to avoid collisions
-        uart_puts_early("[PMM] Skipping UART region mapping at PA=0x");
-        uart_hex64_early(pa);
-        uart_puts_early(" VA=0x");
-        uart_hex64_early(va);
-        uart_puts_early("\n");
+        // Debug: S = Skip UART region
+        *uart = 'S'; *uart = 'K'; *uart = 'I'; *uart = 'P'; 
+        *uart = 'P'; uart_hex64_early(pa);
+        *uart = 'V'; uart_hex64_early(va);
+        *uart = '\r'; *uart = '\n';
         return;
     }
     
@@ -551,15 +554,13 @@ void map_page(uint64_t* l3_table, uint64_t va, uint64_t pa, uint64_t flags) {
     
     // Debug output
     if (debug_vmm) {
-        uart_puts_early("[PMM] Mapped VA 0x");
-        uart_hex64_early(va);
-        uart_puts_early(" to PA 0x");
-        uart_hex64_early(pa);
-        uart_puts_early(" with flags 0x");
-        uart_hex64_early(flags);
-        uart_puts_early(" at L3 index ");
-        uart_hex64_early(l3_index);
-        uart_puts_early("\n");
+        // Debug: O = mapped OK
+        *uart = 'O'; *uart = 'K';
+        *uart = 'V'; uart_hex64_early(va);
+        *uart = 'P'; uart_hex64_early(pa);
+        *uart = 'F'; uart_hex64_early(flags);
+        *uart = 'I'; uart_hex64_early(l3_index);
+        *uart = '\r'; *uart = '\n';
     }
 }
 
@@ -573,22 +574,22 @@ void map_page(uint64_t* l3_table, uint64_t va, uint64_t pa, uint64_t flags) {
  */
 void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end, 
                uint64_t phys_start, uint64_t flags) {
+    // UART for debug markers
+    volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
+    
     // Calculate the number of pages
     uint64_t size = virt_end - virt_start;
     uint64_t num_pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
     
     #if DEBUG_MEMORY_MAPPING_ENABLED
-    uart_puts_early("[PMM] Mapping VA 0x");
-    uart_hex64_early(virt_start);
-    uart_puts_early(" - 0x");
-    uart_hex64_early(virt_end);
-    uart_puts_early(" to PA 0x");
-    uart_hex64_early(phys_start);
-    uart_puts_early(" (");
-    uart_hex64_early(num_pages);
-    uart_puts_early(" pages) flags=0x");
-    uart_hex64_early(flags);
-    uart_puts_early("\n");
+    // Debug markers: M=start mapping, V=virt_start, E=virt_end, P=phys_start, N=num_pages, F=flags
+    *uart = 'M'; *uart = 'A'; *uart = 'P'; *uart = ':';  // MAP:
+    *uart = 'V'; uart_hex64_early(virt_start);           // V + virt_start
+    *uart = 'E'; uart_hex64_early(virt_end);             // E + virt_end  
+    *uart = 'P'; uart_hex64_early(phys_start);           // P + phys_start
+    *uart = 'N'; uart_hex64_early(num_pages);            // N + num_pages
+    *uart = 'F'; uart_hex64_early(flags);                // F + flags
+    *uart = '\r'; *uart = '\n';
     #endif
     
     // Map each page
@@ -603,27 +604,24 @@ void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end,
             page_table_to_use = l0_table_ttbr1;
             
             #if DEBUG_MEMORY_MAPPING_PER_PAGE
-            uart_puts_early("[PMM] Using TTBR1 page table for high VA 0x");
-            uart_hex64_early(virt_addr);
-            uart_puts_early("\n");
+            // Debug: T1 = TTBR1 page table used
+            *uart = 'T'; *uart = '1'; uart_hex64_early(virt_addr); *uart = '\r'; *uart = '\n';
             #endif
         } else {
             // Low virtual address - use TTBR0 page table (passed parameter)
             page_table_to_use = l0_table;
             
             #if DEBUG_MEMORY_MAPPING_PER_PAGE
-            uart_puts_early("[PMM] Using TTBR0 page table for low VA 0x");
-            uart_hex64_early(virt_addr);
-            uart_puts_early("\n");
+            // Debug: T0 = TTBR0 page table used
+            *uart = 'T'; *uart = '0'; uart_hex64_early(virt_addr); *uart = '\r'; *uart = '\n';
             #endif
         }
         
         // Create/get L3 table for the virtual address
         uint64_t* l3_table = get_l3_table_for_addr(page_table_to_use, virt_addr);
         if (!l3_table) {
-            uart_puts_early("[PMM] ERROR: Could not get L3 table for address 0x");
-            uart_hex64_early(virt_addr);
-            uart_puts_early("\n");
+            // Debug: X = failed to get L3 table
+            *uart = 'X'; *uart = 'L'; *uart = '3'; uart_hex64_early(virt_addr); *uart = '\r'; *uart = '\n';
             continue;
         }
         
@@ -657,7 +655,6 @@ void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end,
     // asm volatile("dsb ish" ::: "memory");
     // asm volatile("isb" ::: "memory");
     
-    volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
     *uart = 'B'; *uart = 'U'; *uart = 'L'; *uart = 'K'; *uart = ':'; *uart = 'T'; *uart = 'L'; *uart = 'B';
     *uart = '\r'; *uart = '\n';
     
@@ -749,12 +746,15 @@ void map_kernel_page(uint64_t va, uint64_t pa, uint64_t flags) {
  * @brief Map UART MMIO region for both virtual and identity addressing
  */
 void map_uart(void) {
-    uart_puts_early("[PMM] Mapping UART MMIO region\n");
+    volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
+    // Debug: U = UART mapping start
+    *uart = 'U'; *uart = 'A'; *uart = 'R'; *uart = 'T'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T'; *uart = '\r'; *uart = '\n';
     
     // Make sure we have access to kernel L0 table
     uint64_t* l0_table = get_kernel_page_table();
     if (!l0_table) {
-        uart_puts_early("[PMM] ERROR: Failed to get kernel page table for UART mapping\n");
+        // Debug: X = failed to get kernel page table
+        *uart = 'X'; *uart = 'K'; *uart = 'E'; *uart = 'R'; *uart = 'N'; *uart = '\r'; *uart = '\n';
         return;
     }
     
@@ -770,7 +770,8 @@ void map_uart(void) {
     // selected root.
     uint64_t* l3_table = get_l3_table_for_addr(root_for_virt, UART_VIRT);
     if (!l3_table) {
-        uart_puts_early("[PMM] ERROR: Could not get L3 table for UART virtual address\n");
+        // Debug: X = failed to get L3 table for UART
+        *uart = 'X'; *uart = 'L'; *uart = '3'; *uart = 'U'; *uart = 'A'; *uart = 'R'; *uart = 'T'; *uart = '\r'; *uart = '\n';
         return;
     }
     
@@ -784,13 +785,12 @@ void map_uart(void) {
     uart_flags |= PTE_PXN | PTE_UXN;
     
     // Debug output before mapping
-    uart_puts_early("[PMM] UART mapping: PA 0x");
-    uart_hex64_early(UART_PHYS);
-    uart_puts_early(" -> VA 0x");
-    uart_hex64_early(UART_VIRT);
-    uart_puts_early(" with flags 0x");
-    uart_hex64_early(uart_flags);
-    uart_puts_early("\n");
+    // Debug: M = UART mapping details
+    *uart = 'M'; *uart = 'A'; *uart = 'P';
+    *uart = 'P'; uart_hex64_early(UART_PHYS);
+    *uart = 'V'; uart_hex64_early(UART_VIRT);
+    *uart = 'F'; uart_hex64_early(uart_flags);
+    *uart = '\r'; *uart = '\n';
     
     // Calculate the L3 index
     uint64_t l3_idx = (UART_VIRT >> 12) & 0x1FF;
@@ -819,9 +819,8 @@ void map_uart(void) {
     
     // Verify the mapping was set correctly
     uint64_t read_pte = l3_table[l3_idx];
-    uart_puts_early("[PMM] Verified UART PTE: 0x");
-    uart_hex64_early(read_pte);
-    uart_puts_early("\n");
+    // Debug: V = verified PTE
+    *uart = 'V'; *uart = 'E'; *uart = 'R'; uart_hex64_early(read_pte); *uart = '\r'; *uart = '\n';
     
     // Save the phys/virt addresses for diagnostic use
     register_mapping(UART_VIRT, UART_VIRT + 0x1000, UART_PHYS, uart_flags, "UART MMIO");

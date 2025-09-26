@@ -22,7 +22,9 @@ extern void map_range(uint64_t* l0_table, uint64_t virt_start, uint64_t virt_end
 extern void register_mapping(uint64_t virt_start, uint64_t virt_end, uint64_t phys_start, 
                             uint64_t flags, const char* name);
 
-// Dual-mapping function for trampoline support
+// Dual-mapping functions for critical transition components
+void map_vector_table_dual(uint64_t* l0_table_ttbr0, uint64_t* l0_table_ttbr1, 
+                           uint64_t vector_addr);
 void map_range_dual_trampoline(uint64_t* l0_table_ttbr0, uint64_t* l0_table_ttbr1,
                                uint64_t virt_low, uint64_t virt_high, 
                                uint64_t phys, uint64_t size);
@@ -143,11 +145,78 @@ uint64_t* get_kernel_l3_table(void) {
     return l3_table;
 }
 
+// Dual-mapping implementation for vector table support  
+void map_vector_table_dual(uint64_t* l0_table_ttbr0, uint64_t* l0_table_ttbr1, 
+                           uint64_t vector_addr) {
+    volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
+    
+    // Debug output
+    *uart = 'V'; *uart = 'E'; *uart = 'C'; *uart = ':'; *uart = 'D'; *uart = 'U'; *uart = 'A'; *uart = 'L';
+    *uart = '\r'; *uart = '\n';
+    
+    // Calculate page boundaries for vector table (needs 2 pages for full 2KB vector table)
+    uint64_t vect_page_start = vector_addr & ~0xFFF;  // Page-aligned start
+    uint64_t vect_page_end = vect_page_start + 0x2000; // 2 pages (8KB) for safety
+    
+    // Vector table low mapping (identity - keep VBAR_EL1 working)
+    map_range(l0_table_ttbr0, vect_page_start, vect_page_end, vect_page_start, PTE_KERN_TEXT);
+    *uart = 'V'; *uart = 'L'; *uart = 'O'; *uart = 'W'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // Vector table high mapping (high virtual address)
+    uint64_t vect_high = HIGH_VIRT_BASE + vect_page_start;
+    map_range(l0_table_ttbr1, vect_high, vect_high + 0x2000, vect_page_start, PTE_KERN_TEXT);
+    *uart = 'V'; *uart = 'H'; *uart = 'I'; *uart = 'G'; *uart = 'H'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    *uart = 'V'; *uart = 'E'; *uart = 'C'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+}
+
 // Dual-mapping implementation for trampoline support
 void map_range_dual_trampoline(uint64_t* l0_table_ttbr0, uint64_t* l0_table_ttbr1,
                                uint64_t virt_low, uint64_t virt_high, 
                                uint64_t phys, uint64_t size) {
     volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
+    
+#if DEBUG_TRAMP_VALIDATE
+    // DUAL-TRAMPOLINE VALIDATION: Show received parameters and computed map_range calls
+    *uart = 'D'; *uart = 'U'; *uart = 'A'; *uart = 'L'; *uart = '.'; *uart = 'R'; *uart = 'E'; *uart = 'C'; *uart = 'V'; *uart = '\r'; *uart = '\n';
+    *uart = 'L'; *uart = '='; uart_hex64_early(virt_low);
+    *uart = 'H'; *uart = '='; uart_hex64_early(virt_high);  
+    *uart = 'P'; *uart = '='; uart_hex64_early(phys);
+    *uart = 'S'; *uart = '='; uart_hex64_early(size);
+    *uart = '\r'; *uart = '\n';
+    
+    // Compute what we'll pass to map_range calls
+    uint64_t ttbr0_start = virt_low;
+    uint64_t ttbr0_end = virt_low + size;
+    uint64_t ttbr0_pages = (ttbr0_end - ttbr0_start + PAGE_SIZE - 1) / PAGE_SIZE;
+    
+    uint64_t ttbr1_start = virt_high; 
+    uint64_t ttbr1_end = virt_high + size;
+    uint64_t ttbr1_pages = (ttbr1_end - ttbr1_start + PAGE_SIZE - 1) / PAGE_SIZE;
+    
+    *uart = 'T'; *uart = '0'; *uart = ':';
+    *uart = 'S'; *uart = '='; uart_hex64_early(ttbr0_start);
+    *uart = 'E'; *uart = '='; uart_hex64_early(ttbr0_end);
+    *uart = 'N'; *uart = '='; uart_hex64_early(ttbr0_pages);
+    *uart = '\r'; *uart = '\n';
+    
+    *uart = 'T'; *uart = '1'; *uart = ':';
+    *uart = 'S'; *uart = '='; uart_hex64_early(ttbr1_start);
+    *uart = 'E'; *uart = '='; uart_hex64_early(ttbr1_end);
+    *uart = 'N'; *uart = '='; uart_hex64_early(ttbr1_pages);
+    *uart = '\r'; *uart = '\n';
+    
+    // Warning for suspicious sizes
+    if (ttbr0_pages > 0x100 || ttbr1_pages > 0x100) {
+        *uart = 'D'; *uart = 'U'; *uart = 'A'; *uart = 'L'; *uart = '.';
+        *uart = 'S'; *uart = 'I'; *uart = 'Z'; *uart = 'E'; *uart = '_';
+        *uart = 'S'; *uart = 'U'; *uart = 'S'; *uart = 'P'; *uart = 'I'; *uart = 'C'; *uart = 'I'; *uart = 'O'; *uart = 'U'; *uart = 'S';
+        *uart = '\r'; *uart = '\n';
+    }
+#endif
     
     // Debug output
     *uart = 'D'; *uart = 'U'; *uart = 'A'; *uart = 'L'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
@@ -350,10 +419,46 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     
     // TRAMPOLINE SETUP: Dual-map trampoline section for atomic PC transition
     extern void mmu_trampoline_low(void);
-    extern uint64_t _trampoline_section_size;
+    extern uint64_t _trampoline_section_size[];
     uint64_t tramp_phys = (uint64_t)&mmu_trampoline_low;
-    uint64_t tramp_size = (uint64_t)&_trampoline_section_size;
+    uint64_t tramp_size = _trampoline_section_size[0];
     uint64_t tramp_high = HIGH_VIRT_BASE + tramp_phys;
+
+#define DEBUG_TRAMP_VALIDATE 1
+#if DEBUG_TRAMP_VALIDATE
+    // TRAMPOLINE VALIDATION: Check symbol math and parameters
+    *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'M'; *uart = 'P'; *uart = '.';
+    *uart = 'S'; *uart = 'Y'; *uart = 'M'; *uart = ':'; *uart = '\r'; *uart = '\n';
+    
+    // Print raw symbol addresses
+    *uart = 'L'; *uart = 'O'; *uart = 'W'; *uart = '='; uart_hex64_early((uint64_t)&mmu_trampoline_low);
+    *uart = 'S'; *uart = 'I'; *uart = 'Z'; *uart = '='; uart_hex64_early(_trampoline_section_size[0]);
+    *uart = '\r'; *uart = '\n';
+    
+    // Compute parameters for dual mapping call
+    uint64_t start_low = tramp_phys;
+    uint64_t size_bytes = tramp_size;
+    uint64_t end_low = start_low + size_bytes;
+    uint64_t num_pages = (end_low - start_low + PAGE_SIZE - 1) / PAGE_SIZE;
+    
+    *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'M'; *uart = 'P'; *uart = '.';
+    *uart = 'C'; *uart = 'A'; *uart = 'L'; *uart = 'L'; *uart = '\r'; *uart = '\n';
+    *uart = 'S'; *uart = '='; uart_hex64_early(start_low);
+    *uart = 'Z'; *uart = '='; uart_hex64_early(size_bytes);
+    *uart = 'E'; *uart = '='; uart_hex64_early(end_low);
+    *uart = 'N'; *uart = '='; uart_hex64_early(num_pages);
+    *uart = '\r'; *uart = '\n';
+    
+    // Size warning check
+    if (num_pages > 0x100) {
+        *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'M'; *uart = 'P'; *uart = '.';
+        *uart = 'S'; *uart = 'I'; *uart = 'Z'; *uart = 'E'; *uart = '_';
+        *uart = 'S'; *uart = 'U'; *uart = 'S'; *uart = 'P'; *uart = 'I'; *uart = 'C'; *uart = 'I'; *uart = 'O'; *uart = 'U'; *uart = 'S';
+        *uart = '\r'; *uart = '\n';
+        *uart = 'N'; *uart = '='; uart_hex64_early(num_pages);
+        *uart = '\r'; *uart = '\n';
+    }
+#endif
     
     *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'M'; *uart = 'P'; *uart = ':'; *uart = 'S'; *uart = 'E'; *uart = 'T'; *uart = 'U'; *uart = 'P';
     *uart = '\r'; *uart = '\n';
@@ -362,6 +467,34 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     map_range_dual_trampoline(page_table_base, l0_table_ttbr1, tramp_phys, tramp_high, tramp_phys, tramp_size);
     
     *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'M'; *uart = 'P'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // VECTOR TABLE DUAL MAPPING: Ensure vector table is accessible in both address spaces
+    extern char vector_table[];
+    uint64_t vector_addr = (uint64_t)vector_table;
+    
+#if DEBUG_TRAMP_VALIDATE
+    // VECTOR TABLE VALIDATION: Show vector table address and mapping details
+    *uart = 'V'; *uart = 'E'; *uart = 'C'; *uart = 'T'; *uart = '.';
+    *uart = 'A'; *uart = 'D'; *uart = 'D'; *uart = 'R'; *uart = '\r'; *uart = '\n';
+    *uart = 'V'; *uart = '='; uart_hex64_early(vector_addr);
+    *uart = '\r'; *uart = '\n';
+    
+    // Show page boundaries
+    uint64_t vect_page_start = vector_addr & ~0xFFF;
+    uint64_t vect_high = HIGH_VIRT_BASE + vect_page_start;
+    *uart = 'L'; *uart = '='; uart_hex64_early(vect_page_start);        // Low mapping
+    *uart = 'H'; *uart = '='; uart_hex64_early(vect_high);              // High mapping  
+    *uart = '\r'; *uart = '\n';
+#endif
+    
+    *uart = 'V'; *uart = 'E'; *uart = 'C'; *uart = 'T'; *uart = ':'; *uart = 'S'; *uart = 'E'; *uart = 'T'; *uart = 'U'; *uart = 'P';
+    *uart = '\r'; *uart = '\n';
+    
+    // Dual-map vector table at both TTBR0 (low) and TTBR1 (high) addresses  
+    map_vector_table_dual(page_table_base, l0_table_ttbr1, vector_addr);
+    
+    *uart = 'V'; *uart = 'E'; *uart = 'C'; *uart = 'T'; *uart = ':'; *uart = 'O'; *uart = 'K';
     *uart = '\r'; *uart = '\n';
     
     // POLICY LAYER: Pre-enable barrier sequence (eliminates duplication)

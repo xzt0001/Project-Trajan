@@ -11,6 +11,8 @@ uint64_t read_mair_el1(void);
 // Cache and MMU operations
 void enhanced_cache_maintenance(void);
 void enable_mmu_enhanced(uint64_t* page_table_base);
+void map_vector_table_dual(uint64_t* l0_table_ttbr0, uint64_t* l0_table_ttbr1, 
+                           uint64_t vector_addr);
 
 // Page table management
 uint64_t* init_page_tables(void);
