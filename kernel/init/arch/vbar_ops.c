@@ -127,67 +127,61 @@ void write_vbar_el1(uint64_t address) {
 }
 
 /**
+ * OPTION D PHASE 3: Update VBAR_EL1 to high virtual address
+ * 
+ * Transitions VBAR_EL1 from physical identity mapping to high virtual address.
+ * Must be called AFTER MMU is enabled and stable. This completes the 
+ * physical→virtual transition for exception handling.
+ */
+void update_vbar_to_virtual(void) {
+    volatile uint32_t* uart = (volatile uint32_t*)DEBUG_UART;
+    
+    // Define high virtual address (matches mapping in map_vector_table_dual)
+    #define HIGH_VIRT_BASE 0xFFFF800000000000ULL
+    uint64_t vbar_virt_high = HIGH_VIRT_BASE + 0x01000000;
+    
+    // Debug marker: Start VBAR transition
+    *uart = 'V'; *uart = 'B'; *uart = 'A'; *uart = 'R'; *uart = ':';
+    *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'N'; *uart = 'S';
+    *uart = '\r'; *uart = '\n';
+    
+    // Update VBAR_EL1 to high virtual address
+    asm volatile(
+        "msr vbar_el1, %0\n"
+        "dsb sy\n"              // Data synchronization
+        "isb\n"                 // Instruction synchronization
+        :: "r"(vbar_virt_high)
+    );
+    
+    // Verify the transition
+    uint64_t vbar_new;
+    asm volatile("mrs %0, vbar_el1" : "=r"(vbar_new));
+    
+    if (vbar_new == vbar_virt_high) {
+        // Success marker
+        *uart = 'V'; *uart = 'B'; *uart = 'A'; *uart = 'R'; *uart = ':';
+        *uart = 'V'; *uart = 'I'; *uart = 'R'; *uart = 'T'; *uart = ':';
+        *uart = 'O'; *uart = 'K';
+        *uart = '\r'; *uart = '\n';
+    } else {
+        // Error marker
+        *uart = 'V'; *uart = 'B'; *uart = 'A'; *uart = 'R'; *uart = ':';
+        *uart = 'E'; *uart = 'R'; *uart = 'R'; *uart = '!';
+        *uart = '\r'; *uart = '\n';
+    }
+}
+
+/**
  * init_traps - Initialize trap handlers with virtual addressing
  * 
+ * LEGACY FUNCTION - Now calls update_vbar_to_virtual for Option D compatibility.
  * Sets up VBAR_EL1 for virtual memory mode, using the mapped vector
  * table address. Called after MMU initialization to transition from
  * physical to virtual exception handling.
  */
 void init_traps(void) {
-    volatile uint32_t* uart = (volatile uint32_t*)DEBUG_UART;
-    *uart = 'I'; *uart = 'T'; *uart = 'R'; *uart = 'P'; *uart = ':'; // Init trap marker
-    
-    // Get the saved vector table address from VMM (defined in vmm.c)
-    extern uint64_t saved_vector_table_addr;
-    
-    // Use the fixed virtual address where we mapped the vector table
-    uint64_t vt_addr = 0x1000000; // Default fixed address
-    
-    // If VMM saved a different address, use that (unlikely, but for robustness)
-    if (saved_vector_table_addr != 0) {
-        vt_addr = saved_vector_table_addr;
-    }
-    
-    // Print the address we're about to use
-    debug_print("[VBAR] Setting vector table to: 0x");
-    debug_hex64("", vt_addr);
-    debug_print("\n");
-    
-    // Set VBAR_EL1 to the mapped virtual address
-    asm volatile("msr vbar_el1, %0" :: "r"(vt_addr));
-    asm volatile("isb");
-    
-    // Verify value was set
-    uint64_t vbar;
-    asm volatile("mrs %0, vbar_el1" : "=r"(vbar));
-    
-    // Add verification code
-    debug_print("[VBAR] Set VBAR_EL1 to 0x1000000, read back 0x");
-    debug_hex64("", vbar);
-    debug_print("\n");
-    
-    // Verify VBAR_EL1 is set to 0x1000000
-    if (vbar != 0x1000000) {
-        debug_print("[VBAR] ERROR: VBAR_EL1 not set to 0x1000000! Current value: 0x");
-        debug_hex64("", vbar);
-        debug_print("\n");
-        
-        // Try setting it again
-        debug_print("[VBAR] Attempting to set VBAR_EL1 one more time...\n");
-        asm volatile(
-            "msr vbar_el1, %0\n"
-            "isb\n"
-            :: "r"(vt_addr)
-        );
-        
-        // Check again
-        asm volatile("mrs %0, vbar_el1" : "=r"(vbar));
-        debug_print("[VBAR] After second attempt: 0x");
-        debug_hex64("", vbar);
-        debug_print("\n");
-    } else {
-        debug_print("[VBAR] SUCCESS: VBAR_EL1 correctly set to 0x1000000\n");
-    }
+    // For Option D, just call the new update function
+    update_vbar_to_virtual();
 }
 
 /**

@@ -1,5 +1,19 @@
 Here are the most up to date info about my development progress focusing on low level debugging. 
 
+October 8th, 2025
+
+Context (post-VBAR work): VBAR set to physical/identity early, then switched to TTBR1 virtual in the trampoline continuation. Also dual-mapped the vector table (TTBR0 low + TTBR1 high).
+Fixes done:
+	•	Replaced hard-coded vector check (0x01000000) with mrs vbar_el1 (probe follows VBAR).
+	•	Added map_vector_table_dual() and early VBAR=0x41000000 write; planned late VBAR write to TTBR1 high.
+	•	Corrected trampoline size (address vs value bug) and clamped/align-up; removed 1 GB accidental mapping.
+	•	Fixed register lifetime across inline asm (re-seeded TTBR base regs; breadcrumb proved progress past VEC).
+
+Current issue: Reaching trampoline.S and print TLOW, then stall. 
+
+Probable root cause: branching to the high-VA alias before MMU is enabled. With M=0, 0xFFFF8000… isn’t fetchable → no THIGH/continuation.
+
+Latest kernel log: https://docs.google.com/document/d/14vs0qtIwmZPpFn26GG6p2ZGD71Ivu3BI98CK_V4OLVw/edit?usp=sharing 
 
 September 26th, 2025
 

@@ -145,7 +145,7 @@ uint64_t* get_kernel_l3_table(void) {
     return l3_table;
 }
 
-// Dual-mapping implementation for vector table support  
+// OPTION D PHASE 2: Dual-mapping implementation for hybrid physical→virtual transition
 void map_vector_table_dual(uint64_t* l0_table_ttbr0, uint64_t* l0_table_ttbr1, 
                            uint64_t vector_addr) {
     volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
@@ -154,19 +154,50 @@ void map_vector_table_dual(uint64_t* l0_table_ttbr0, uint64_t* l0_table_ttbr1,
     *uart = 'V'; *uart = 'E'; *uart = 'C'; *uart = ':'; *uart = 'D'; *uart = 'U'; *uart = 'A'; *uart = 'L';
     *uart = '\r'; *uart = '\n';
     
-    // Calculate page boundaries for vector table (needs 2 pages for full 2KB vector table)
-    uint64_t vect_page_start = vector_addr & ~0xFFF;  // Page-aligned start
-    uint64_t vect_page_end = vect_page_start + 0x2000; // 2 pages (8KB) for safety
+    // Get CURRENT physical address from VBAR_EL1 (set by boot code using adrp)
+    uint64_t vbar_phys = read_vbar_el1();
+    uint64_t vect_phys_page = vbar_phys & ~0x7FFUL;  // 2KB align (not just page)
     
-    // Vector table low mapping (identity - keep VBAR_EL1 working)
-    map_range(l0_table_ttbr0, vect_page_start, vect_page_end, vect_page_start, PTE_KERN_TEXT);
-    *uart = 'V'; *uart = 'L'; *uart = 'O'; *uart = 'W'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    // STEP 3 FIX: Use bitwise OR to preserve offset in high virtual address
+    uint64_t vect_high = HIGH_VIRT_BASE | vect_phys_page;
+    
+    // Debug: Show physical and high virtual addresses
+    *uart = 'P'; *uart = 'H'; *uart = 'Y'; *uart = 'S'; *uart = '=';
+    uart_hex64_early(vect_phys_page);
+    *uart = '\r'; *uart = '\n';
+    *uart = 'H'; *uart = 'I'; *uart = 'G'; *uart = 'H'; *uart = '=';
+    uart_hex64_early(vect_high);
     *uart = '\r'; *uart = '\n';
     
-    // Vector table high mapping (high virtual address)
-    uint64_t vect_high = HIGH_VIRT_BASE + vect_page_start;
-    map_range(l0_table_ttbr1, vect_high, vect_high + 0x2000, vect_page_start, PTE_KERN_TEXT);
-    *uart = 'V'; *uart = 'H'; *uart = 'I'; *uart = 'G'; *uart = 'H'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    // STEP 1: Identity map physical address in TTBR0 (for immediate post-MMU operation)
+    // This ensures exceptions work right after MMU enable while VBAR still points to physical
+    map_range(l0_table_ttbr0, vect_phys_page, vect_phys_page + 0x2000, 
+              vect_phys_page, PTE_KERN_TEXT);
+    *uart = 'I'; *uart = 'D'; *uart = 'E'; *uart = 'N'; *uart = 'T'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // STEP 2: Map high virtual address in TTBR1 (for post-transition operation)
+    // This is where VBAR will point after we transition to virtual addressing
+    map_range(l0_table_ttbr1, vect_high, vect_high + 0x2000, 
+              vect_phys_page, PTE_KERN_TEXT);
+    *uart = 'H'; *uart = 'I'; *uart = 'G'; *uart = 'H'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // STEP 1 & 4: Explicit VBAR write before MMU (make it explicit in C)
+    // STEP 5: Sanity check - verify 2KB alignment
+    if ((vect_phys_page & 0x7FF) != 0) {
+        *uart = 'E'; *uart = 'R'; *uart = 'R'; *uart = ':'; *uart = 'A'; *uart = 'L'; *uart = 'I'; *uart = 'G'; *uart = 'N';
+        *uart = '\r'; *uart = '\n';
+        while(1);  // Halt on alignment error
+    }
+    
+    // Explicitly set VBAR to physical before MMU enable
+    asm volatile("msr vbar_el1, %0\n\tisb" :: "r"(vect_phys_page));
+    
+    // STEP 4: Log first VBAR write
+    *uart = 'V'; *uart = 'B'; *uart = 'A'; *uart = 'R'; *uart = ':';
+    *uart = 'L'; *uart = 'O'; *uart = 'W'; *uart = '=';
+    uart_hex64_early(vect_phys_page);
     *uart = '\r'; *uart = '\n';
     
     *uart = 'V'; *uart = 'E'; *uart = 'C'; *uart = ':'; *uart = 'O'; *uart = 'K';
@@ -419,9 +450,10 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     
     // TRAMPOLINE SETUP: Dual-map trampoline section for atomic PC transition
     extern void mmu_trampoline_low(void);
-    extern uint64_t _trampoline_section_size[];
+    extern char _trampoline_section_start[], _trampoline_section_end[];
     uint64_t tramp_phys = (uint64_t)&mmu_trampoline_low;
-    uint64_t tramp_size = _trampoline_section_size[0];
+    // STEP 5: Calculate size from labels (more reliable than .data symbol)
+    uint64_t tramp_size = (uint64_t)(_trampoline_section_end - _trampoline_section_start);
     uint64_t tramp_high = HIGH_VIRT_BASE + tramp_phys;
 
 #define DEBUG_TRAMP_VALIDATE 1
@@ -432,7 +464,7 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     
     // Print raw symbol addresses
     *uart = 'L'; *uart = 'O'; *uart = 'W'; *uart = '='; uart_hex64_early((uint64_t)&mmu_trampoline_low);
-    *uart = 'S'; *uart = 'I'; *uart = 'Z'; *uart = '='; uart_hex64_early(_trampoline_section_size[0]);
+    *uart = 'S'; *uart = 'I'; *uart = 'Z'; *uart = '='; uart_hex64_early(tramp_size);
     *uart = '\r'; *uart = '\n';
     
     // Compute parameters for dual mapping call
@@ -851,8 +883,14 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "subs w30, w30, #4\n"        // Next nibble
         "b.ge 9b\n"                  // Loop for all 4 digits
         
-        // DEBUG 2: Page Table Entry Verification  
-        "ldr x28, [x19]\n"           // Read L0 table entry 0
+        // DEBUG 2: Page Table Entry Verification
+        // STEP 1: Re-seed TTBR0 base register (fix register corruption!)
+        "mov x19, %0\n"              // Reload TTBR0 base from input operand
+        // STEP 2: Use freshly loaded register for dereference
+        "ldr x28, [x19]\n"           // Read L0 table entry 0 (now safe!)
+        // STEP 3: Breadcrumb to confirm dereference succeeded
+        "mov w27, #'l'\n"            // lowercase 'l' to distinguish
+        "str w27, [x26]\n"
         "mov w27, #'L'\n"
         "str w27, [x26]\n"
         "mov w27, #'0'\n"
@@ -938,15 +976,15 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         "mov w27, #':'\n"
         "str w27, [x26]\n"
         
-        // Check if vector table has virtual mapping at expected address
-        "mov x28, #0x0000000001000000\n" // Expected virtual vector table address
+        // STEP 2 FIX: Check if vector table mapping exists at ACTUAL VBAR address
+        "mrs x28, vbar_el1\n"        // Get actual VBAR address (not hardcoded!)
         "lsr x29, x28, #39\n"        // L0 index
         "and x29, x29, #0x1FF\n"
         "ldr x30, [x19, x29, lsl #3]\n" // Load L0 entry
         "tst x30, #1\n"              // Check valid bit
         "b.eq 21f\n"                 // Branch if invalid
         
-        // Vector table mapping exists
+        // Vector table mapping exists at VBAR address
         "mov w27, #'O'\n"
         "str w27, [x26]\n"
         "mov w27, #'K'\n"
@@ -1709,7 +1747,9 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         // "str w27, [x26]\n"
         
         // STEP 3A: Verify page table integrity right before MMU
-        "ldr x28, [x19]\n"           // Read first L0 entry
+        // STEP 1: Re-seed TTBR0 base register
+        "mov x19, %0\n"              // Reload TTBR0 base from input operand
+        "ldr x28, [x19]\n"           // Read first L0 entry (now safe!)
         "tst x28, #1\n"              // Check valid bit
         "b.eq page_table_corrupt\n"
         
@@ -1925,10 +1965,45 @@ void mmu_trampoline_continuation_point(void) {
     *uart = 'C'; *uart = 'O'; *uart = 'N'; *uart = 'T'; *uart = ':'; *uart = 'E'; *uart = 'N'; *uart = 'T'; *uart = 'E'; *uart = 'R';
     *uart = '\r'; *uart = '\n';
     
+    // STEP 1 PART 2: Update VBAR to high virtual address (complete Option D!)
+    // Read current VBAR (should be physical/low address)
+    uint64_t vbar_low;
+    asm volatile("mrs %0, vbar_el1" : "=r"(vbar_low));
+    
+    // Calculate high virtual address using bitwise OR
+    uint64_t vbar_high = HIGH_VIRT_BASE | (vbar_low & ~0x7FFUL);
+    
+    // STEP 5: Sanity check alignment
+    if ((vbar_high & 0x7FF) != 0) {
+        *uart = 'E'; *uart = 'R'; *uart = 'R'; *uart = ':'; *uart = 'V'; *uart = 'B'; *uart = 'A'; *uart = 'R'; *uart = '_'; *uart = 'A'; *uart = 'L';
+        *uart = '\r'; *uart = '\n';
+        while(1);  // Halt on alignment error
+    }
+    
+    // Update VBAR to high virtual address
+    asm volatile("msr vbar_el1, %0\n\tisb" :: "r"(vbar_high));
+    
+    // STEP 4: Log second VBAR write
+    *uart = 'V'; *uart = 'B'; *uart = 'A'; *uart = 'R'; *uart = ':';
+    *uart = 'H'; *uart = 'I'; *uart = '=';
+    uart_hex64_early(vbar_high);
+    *uart = '\r'; *uart = '\n';
+    
     // Set EPD for runtime kernel-only mode (EPD0=1, EPD1=0)
     mmu_policy_set_epd_runtime_kernel();
     
     *uart = 'C'; *uart = 'O'; *uart = 'N'; *uart = 'T'; *uart = ':'; *uart = 'E'; *uart = 'P'; *uart = 'D'; *uart = '+';
+    *uart = '\r'; *uart = '\n';
+    
+    // STEP 5: Validation test - trigger sync exception to verify vectors work in TTBR1
+    *uart = 'T'; *uart = 'E'; *uart = 'S'; *uart = 'T'; *uart = ':'; *uart = 'B'; *uart = 'R'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // Deliberately trigger breakpoint - should see sync handler banner
+    asm volatile("brk #0");
+    
+    // If we return from the exception, vectors are working!
+    *uart = 'T'; *uart = 'E'; *uart = 'S'; *uart = 'T'; *uart = ':'; *uart = 'O'; *uart = 'K';
     *uart = '\r'; *uart = '\n';
     
     // Optional: Switch UART to virtual mapping in the future

@@ -42,6 +42,15 @@ void ensure_vbar_el1(void);
 void write_vbar_el1(uint64_t address);
 
 /**
+ * update_vbar_to_virtual - OPTION D: Transition VBAR_EL1 to virtual address
+ * 
+ * Transitions VBAR_EL1 from physical identity mapping to high virtual address.
+ * Must be called AFTER MMU is enabled and stable. This completes the 
+ * physical→virtual transition for exception handling (Option D implementation).
+ */
+void update_vbar_to_virtual(void);
+
+/**
  * init_traps - Initialize trap handlers with virtual addressing
  * 
  * Sets up VBAR_EL1 for virtual memory mode, using the mapped vector

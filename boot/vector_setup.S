@@ -29,7 +29,7 @@ vector_table_setup:
     str w2, [x19]
     uart_delay             // Add delay after UART write
     
-    // CRITICAL FIX: Set VBAR_EL1 to vector_table directly before MMU initialization
+    // OPTION D PHASE 1: Set VBAR_EL1 to PHYSICAL address using PC-relative addressing
     mov w2, #'V'
     str w2, [x19]
     mov w2, #'B'
@@ -37,8 +37,10 @@ vector_table_setup:
     mov w2, #':'
     str w2, [x19]
     
-    // Load the vector_table address
-    ldr x0, =vector_table
+    // Get ACTUAL physical address of vector_table using PC-relative addressing
+    // This gives us where the code REALLY is, not a virtual address
+    adrp x0, vector_table           // Get page address of vector_table
+    add x0, x0, :lo12:vector_table  // Add low 12 bits for exact address
     
     // Enhanced: Verify vector table address is valid
     cbz x0, vector_address_error
@@ -47,7 +49,7 @@ vector_table_setup:
     and x21, x0, #0x7FF         // Check bottom 11 bits (2KB = 2^11)
     cbnz x21, vector_alignment_error
     
-    // Set VBAR_EL1 to the physical address of vector_table
+    // Set VBAR_EL1 to the PHYSICAL address (works pre-MMU)
     msr vbar_el1, x0
     isb                     // Instruction synchronization barrier
     
