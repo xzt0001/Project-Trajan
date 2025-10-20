@@ -77,7 +77,7 @@ But does NOT map:
 - General .text section (where C functions compile to)
 - .rodata, .data, .bss (where C functions access data)
 
-**Correct Solution next would likely involve inline the necessary register operations directly in trampoline.S assembly - keep the trampoline self-contained with no external function calls.
+**The solution next would likely involve inline the necessary register operations directly in trampoline.S assembly - keep the trampoline self-contained with no external function calls.
 
 October 8th, 2025
 
