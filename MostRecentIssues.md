@@ -1,5 +1,84 @@
 Here are the most up to date info about my development progress focusing on low level debugging. 
 
+October 20th, 2025
+
+To address stucking at TLOW marker in trampoline.S, I initially thought about doing something like this "
+mmu_trampoline_low:
+    // Save registers
+    stp x29, x30, [sp, #-16]!
+    stp x19, x20, [sp, #-16]!
+    stp x21, x22, [sp, #-16]!
+
+    // Debug: TLOW marker (pre-MMU, physical UART OK)
+    mov x19, #0x09000000
+    mov w20, #'T'; str w20, [x19]
+    mov w20, #'L'; str w20, [x19]
+    mov w20, #'O'; str w20, [x19]
+    mov w20, #'W'; str w20, [x19]
+    mov w20, #'\r'; str w20, [x19]
+    mov w20, #'\n'; str w20, [x19]
+
+    // Bootstrap policy (allow both TTBR walks)
+    bl  mmu_policy_set_epd_bootstrap_dual
+
+    // Enable MMU (includes ISB inside your helper)
+    bl  mmu_enable_translation
+
+    mov x19, #0x09000000
+    mov w20, #'M'; str w20, [x19]
+    mov w20, #'+'; str w20, [x19]
+    mov w20, #'\r'; str w20, [x19]
+    mov w20, #'\n'; str w20, [x19]
+
+    // Build HIGH_VIRT_BASE = 0xFFFF800000000000
+    movz x21, #0,      lsl #0
+    movk x21, #0x8000, lsl #32
+    movk x21, #0xFFFF, lsl #48
+
+    // Compute high alias of trampoline_high and branch
+    adrp x20, mmu_trampoline_high
+    add  x20, x20, :lo12:mmu_trampoline_high
+    orr  x20, x20, x21
+    br   x20
+
+mmu_trampoline_high:
+    // Debug: THIGH (OK if UART mapped or you keep a PA window)
+    mov x19, #0x09000000
+    mov w20, #'T'; str w20, [x19]
+    mov w20, #'H'; str w20, [x19]
+
+    bl  mmu_trampoline_continuation_point   // VBAR→TTBR1, EPD0=1, etc.
+
+    // Restore and return
+    ldp x21, x22, [sp], #16
+    ldp x19, x20, [sp], #16
+    ldp x29, x30, [sp], #16
+    ret
+    "
+**This approach will likely fail.
+
+Cause this snippet attempts to call C functions from mmu_policy.C from the identity-mapped trampoline code. However, these functions live in the general .text section, which is NOT identity-mapped in TTBR0.
+
+**What happens
+1. Trampoline executes at 0x4008f000 (identity-mapped)
+2. bl mmu_policy_set_epd_bootstrap_dual branches to ~0x40085xxx
+3. CPU attempts instruction fetch from 0x40085xxx
+4. TTBR0 page table lookup fails (no mapping exists)
+5. Hang
+
+**Root Cause: The TTBR0 identity mapping setup in memory_core.c only maps:
+- Assembly block (inline asm)
+- .text.tramp section (trampoline)
+- Vector table
+- Stack
+- UART device memory
+
+But does NOT map:
+- General .text section (where C functions compile to)
+- .rodata, .data, .bss (where C functions access data)
+
+**Correct Solution next would likely involve inline the necessary register operations directly in trampoline.S assembly - keep the trampoline self-contained with no external function calls.
+
 October 8th, 2025
 
 Context (post-VBAR work): VBAR set to physical/identity early, then switched to TTBR1 virtual in the trampoline continuation. Also dual-mapped the vector table (TTBR0 low + TTBR1 high).
