@@ -7,8 +7,6 @@ Includes UART logging, stack setup, physical memory management, virtual memory m
 
 **Researchers interested in OS design, trust boundaries are invited to initiate technical dialogue or collaboration.
 
-** This project will remain emulator-only, it not publish components that could facilitate hardware bring-up. No hardware images, drivers unless a formal, documented gated review with trusted researchers.
-
 
 Future Roadmap(generalized version):
 

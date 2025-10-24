@@ -1,5 +1,13 @@
 Here are the most up to date info about my development progress focusing on low level debugging. 
 
+October 24th, 2025
+
+I tried to enable the MMU while still executing in the identity-mapped trampoline, then jump high. The reason I still hang at the TLOW marker is likely not due to the new trampoline.S, but because of the C path in memory_core.c pre-configures TCR_EL1 to “kernel-only” (EPD0=1). See line 603 in memory_core.c.
+
+That disables TTBR0 just before I call the trampoline, so when the trampoline turns the MMU on the very next fetch must use TTBR0, but TTBR0 is marked “don’t walk.” So even as I tried to fix TCR in the trampoline (clear EPD0). The net effect: first translated fetch after msr sctlr_el1, x0 fails → sitting at TLOW.
+
+Latest kernel log: https://docs.google.com/document/d/1AHcqzNl0lSA_GXrUsyZpe4bXpKI3ROWsU9MsLKwIdIU/edit?usp=sharing
+
 October 20th, 2025
 
 To address stucking at TLOW marker in trampoline.S, I initially thought about doing something like this "
