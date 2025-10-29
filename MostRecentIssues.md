@@ -1,5 +1,30 @@
 Here are the most up to date info about my development progress focusing on low level debugging. 
 
+## October 29th, 2025 - Attempt to fix the TLOW hang in trampoline.S
+
+**Problem: System hung at "TLOW" marker in trampoline.S during MMU enable sequence.
+
+**Root Cause: Architectural violation - TCR_EL1 was configured for kernel-only mode (EPD0=1, disabling TTBR0) at line 603 in memory_core.c BEFORE calling the trampoline. When the trampoline enabled the MMU, the first instruction fetch attempted to use TTBR0, but the MMU was configured to not walk TTBR0 page tables.
+
+**Solution Implemented: Two-phase TCR configuration pattern:
+
+### Phase 1: Bootstrap Dual-Table Mode (BEFORE MMU enable)
+
+### Phase 2: Kernel-Only Mode (AFTER jump to high VA)
+
+### Trampoline Simplification
+
+**Files Modified
+1. memory/mmu_policy.c - Added bootstrap_dual function
+2. include/mmu_policy.h - Added function declaration
+3. memory/memory_core.c - Line 606: Call bootstrap_dual instead of kernel_only
+4. memory/memory_core.c - Line 1999: Call kernel_only after high VA jump
+5. memory/trampoline.S - Removed TCR modification code
+
+Current issue: I think my plan is architecturally correct, but something might re-assert EPD0=1 before MMU enablement.
+
+Latest kernel log: https://docs.google.com/document/d/1r4GJVNq1SEuvvrsQYuSN-yzFpH3WYvUcj2lLp2oed88/edit?usp=sharing 
+
 October 24th, 2025
 
 I tried to enable the MMU while still executing in the identity-mapped trampoline, then jump high. The reason I still hang at the TLOW marker is likely not due to the new trampoline.S, but because of the C path in memory_core.c pre-configures TCR_EL1 to “kernel-only” (EPD0=1). See line 603 in memory_core.c.

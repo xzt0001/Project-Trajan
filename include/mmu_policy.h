@@ -34,6 +34,23 @@
 void mmu_configure_mair(void);
 
 /**
+ * @brief Configure TCR_EL1 for bootstrap dual-table mode
+ * @param va_bits Virtual address bit width (39 or 48)
+ * 
+ * Programs TCR_EL1 with BOTH TTBR0 and TTBR1 enabled for bootstrap phase:
+ * - T0SZ/T1SZ based on va_bits parameter
+ * - 4KB granule for both TTBR0 and TTBR1
+ * - Inner shareable, WBWA cacheable
+ * - EPD0=0 (ENABLE TTBR0 for identity mapping during boot)
+ * - EPD1=0 (ENABLE TTBR1 for high virtual mapping)
+ * - IPS=1 (40-bit physical address space)
+ * 
+ * CRITICAL: Use this BEFORE enabling MMU. After jumping to high VA,
+ * switch to kernel-only mode using mmu_configure_tcr_kernel_only().
+ */
+void mmu_configure_tcr_bootstrap_dual(unsigned va_bits);
+
+/**
  * @brief Configure TCR_EL1 for kernel-only operation
  * @param va_bits Virtual address bit width (39 or 48)
  * 
@@ -41,8 +58,11 @@ void mmu_configure_mair(void);
  * - T0SZ/T1SZ based on va_bits parameter
  * - 4KB granule for both TTBR0 and TTBR1
  * - Inner shareable, WBWA cacheable
- * - EPD0=1 initially (disable TTBR0 until user mode needed)
+ * - EPD0=1 (disable TTBR0 for kernel-only operation)
  * - IPS=1 (40-bit physical address space)
+ * 
+ * CRITICAL: Only use this AFTER jumping to high VA in TTBR1 space.
+ * Before MMU enable, use mmu_configure_tcr_bootstrap_dual().
  */
 void mmu_configure_tcr_kernel_only(unsigned va_bits);
 

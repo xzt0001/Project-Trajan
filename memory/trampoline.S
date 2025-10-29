@@ -52,28 +52,18 @@ mmu_trampoline_low:
     str w20, [x19]
     
     // ============================================================
-    // CRITICAL: Enable MMU while at identity-mapped address
-    // This must happen BEFORE jumping to high virtual address
+    // CRITICAL: Enable MMU at identity-mapped address
+    // TCR already configured correctly (EPD0=0, EPD1=0) by caller
+    // Just enable MMU and jump to high virtual address
     // ============================================================
     
-    // Step 1: Configure TCR_EL1 for dual-table bootstrap mode
-    mrs  x0, tcr_el1
-    bic  x0, x0, #(1 << 7)      // Clear EPD0 (enable TTBR0 walks)
-    bic  x0, x0, #(1 << 23)     // Clear EPD1 (enable TTBR1 walks)
-    msr  tcr_el1, x0
-    isb                          // Synchronize instruction stream
-    
-    // CRITICAL: Ensure TCR write is visible to MMU hardware before enabling
-    dsb  sy                      // Data synchronization barrier (system-wide)
-    isb                          // Extra instruction barrier for safety
-    
-    // Step 2: Enable MMU by setting M bit in SCTLR_EL1
+    // Enable MMU by setting M bit in SCTLR_EL1
     mrs  x0, sctlr_el1
     orr  x0, x0, #0x1           // Set M bit (MMU enable)
     msr  sctlr_el1, x0
     isb                          // Mandatory synchronization after MMU enable
     
-    // Step 3: Verify MMU is enabled (defensive check)
+    // Verify MMU is enabled (defensive check)
     mrs  x0, sctlr_el1
     and  x0, x0, #0x1
     cbnz x0, 1f                 // Branch if MMU enabled (expected path)

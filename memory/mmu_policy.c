@@ -115,6 +115,137 @@ void mmu_configure_mair(void) {
     }
 }
 
+/**
+ * @brief Configure TCR_EL1 for bootstrap dual-table mode (EPD0=0, EPD1=0)
+ * 
+ * This function configures TCR_EL1 with BOTH TTBR0 and TTBR1 enabled for the
+ * bootstrap phase where we need identity mapping (TTBR0) and high virtual 
+ * mapping (TTBR1) active simultaneously.
+ * 
+ * CRITICAL: This must be used BEFORE enabling MMU via trampoline.
+ * After jumping to high VA, switch to kernel-only mode (EPD0=1).
+ */
+void mmu_configure_tcr_bootstrap_dual(unsigned va_bits) {
+    // S2:TCR:BOOT
+    volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
+    *uart = 'S'; *uart = '2'; *uart = ':'; *uart = 'T'; *uart = 'C'; *uart = 'R'; *uart = ':'; *uart = 'B'; *uart = 'O'; *uart = 'O'; *uart = 'T';
+    *uart = '\r'; *uart = '\n';
+    
+    // DEBUG: Exception level and current TCR value
+    uint64_t current_el;
+    __asm__ volatile("mrs %0, currentel" : "=r"(current_el));
+    current_el = (current_el >> 2) & 0x3;
+    *uart = 'T'; *uart = 'E'; *uart = 'L'; *uart = ':';
+    *uart = '0' + current_el;
+    *uart = '\r'; *uart = '\n';
+    
+    // DEBUG: Read current TCR value
+    uint64_t old_tcr;
+    __asm__ volatile("mrs %0, tcr_el1" : "=r"(old_tcr));
+    *uart = 'T'; *uart = 'O'; *uart = 'L'; *uart = 'D'; *uart = ':';
+    uart_hex64_early(old_tcr);
+    *uart = '\r'; *uart = '\n';
+    
+    // DEBUG: Show VA bits parameter
+    *uart = 'T'; *uart = 'V'; *uart = 'A'; *uart = ':';
+    *uart = '0' + (va_bits / 10);
+    *uart = '0' + (va_bits % 10);
+    *uart = '\r'; *uart = '\n';
+    
+    // Build TCR_EL1 value for BOOTSTRAP DUAL-TABLE MODE
+    *uart = 'T'; *uart = 'B'; *uart = 'L'; *uart = 'D'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
+    *uart = '\r'; *uart = '\n';
+    uint64_t tcr = 0;
+    
+    // VA size configuration based on va_bits parameter
+    if (va_bits == 48) {
+        tcr |= ((uint64_t)TCR_T0SZ_POLICY << 0);   // T0SZ = 16 for 48-bit
+        tcr |= ((uint64_t)TCR_T1SZ_POLICY << 16);  // T1SZ = 16 for 48-bit
+    } else {
+        tcr |= ((uint64_t)25 << 0);                // T0SZ = 25 for 39-bit  
+        tcr |= ((uint64_t)25 << 16);               // T1SZ = 25 for 39-bit
+    }
+    
+    // TG0[15:14] = 0 (4KB granule for TTBR0_EL1)
+    tcr |= (0ULL << 14);
+    
+    // TG1[31:30] = 0 (4KB granule for TTBR1_EL1) 
+    tcr |= (0ULL << 30);
+    
+    // SH0[13:12] = 3 (Inner shareable for TTBR0)
+    tcr |= (3ULL << 12);
+    
+    // SH1[29:28] = 3 (Inner shareable for TTBR1)
+    tcr |= (3ULL << 28);
+    
+    // ORGN0[11:10] = 1 (Outer Write-Back, Read/Write Allocate for TTBR0)
+    tcr |= (1ULL << 10);
+    
+    // ORGN1[27:26] = 1 (Outer Write-Back, Read/Write Allocate for TTBR1)
+    tcr |= (1ULL << 26);
+    
+    // IRGN0[9:8] = 1 (Inner Write-Back, Read/Write Allocate for TTBR0)
+    tcr |= (1ULL << 8);
+    
+    // IRGN1[25:24] = 1 (Inner Write-Back, Read/Write Allocate for TTBR1)
+    tcr |= (1ULL << 24);
+    
+    // ✅ CRITICAL DIFFERENCE: EPD0 = 0 (Enable TTBR0 for bootstrap phase)
+    tcr |= (0ULL << 7);  // ← CHANGED FROM 1 TO 0 (vs kernel_only)
+    
+    // EPD1 = 0 (Enable TTBR1 page table walks for kernel)  
+    tcr |= (0ULL << 23);
+    
+    // IPS[34:32] = 1 (40-bit physical address size)
+    tcr |= (1ULL << 32);
+    
+    // TBI0 = 1 (Top Byte Ignored for TTBR0)
+    tcr |= (1ULL << 37);
+    
+    // TBI1 = 1 (Top Byte Ignored for TTBR1)
+    tcr |= (1ULL << 38);
+    
+    // AS = 0 (ASID size is 8-bit)
+    tcr |= (0ULL << 36);
+    
+    *uart = 'T'; *uart = 'B'; *uart = 'L'; *uart = 'D'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    *uart = 'T'; *uart = 'N'; *uart = 'E'; *uart = 'W'; *uart = ':';
+    uart_hex64_early(tcr);
+    *uart = '\r'; *uart = '\n';
+    
+    // DEBUG: Show EPD0 value explicitly
+    *uart = 'E'; *uart = 'P'; *uart = 'D'; *uart = '0'; *uart = ':';
+    *uart = '0' + ((tcr >> 7) & 1);  // Should print '0'
+    *uart = '\r'; *uart = '\n';
+    
+    // CRITICAL: Write TCR_EL1 register with safety barriers
+    *uart = 'T'; *uart = 'W'; *uart = 'R'; *uart = 'T'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
+    *uart = '\r'; *uart = '\n';
+    __asm__ volatile(
+        "msr tcr_el1, %0\n"
+        "isb\n"
+        :: "r"(tcr) : "memory"
+    );
+    *uart = 'T'; *uart = 'W'; *uart = 'R'; *uart = 'T'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // DEBUG: Verify the write took effect
+    uint64_t verify_tcr;
+    __asm__ volatile("mrs %0, tcr_el1" : "=r"(verify_tcr));
+    *uart = 'T'; *uart = 'V'; *uart = 'F'; *uart = 'Y'; *uart = ':';
+    uart_hex64_early(verify_tcr);
+    *uart = '\r'; *uart = '\n';
+    
+    if (verify_tcr == tcr) {
+        *uart = 'S'; *uart = '2'; *uart = ':'; *uart = 'T'; *uart = ':'; *uart = 'S'; *uart = 'U'; *uart = 'C'; *uart = 'C'; *uart = 'E'; *uart = 'S'; *uart = 'S';
+        *uart = '\r'; *uart = '\n';
+    } else {
+        *uart = 'S'; *uart = '2'; *uart = ':'; *uart = 'T'; *uart = ':'; *uart = 'M'; *uart = 'I'; *uart = 'S'; *uart = 'M'; *uart = 'A'; *uart = 'T'; *uart = 'C'; *uart = 'H';
+        *uart = '\r'; *uart = '\n';
+    }
+}
+
 void mmu_configure_tcr_kernel_only(unsigned va_bits) {
     // S2:TCR:START
     volatile uint32_t* uart = (volatile uint32_t*)0x09000000;

@@ -599,8 +599,11 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     // Set up memory attributes (replacing msr mair_el1, x21)
     mmu_configure_mair();
     
-    // Set up translation control (replacing msr tcr_el1, x20) 
-    mmu_configure_tcr_kernel_only(VA_BITS_48 ? 48 : 39);
+    // Set up translation control for BOOTSTRAP DUAL-TABLE MODE
+    // Use bootstrap_dual (EPD0=0, EPD1=0) instead of kernel_only (EPD0=1, EPD1=0)
+    // This allows trampoline to enable MMU without modifying TCR (eliminates race condition)
+    // After jumping to high VA, continuation function will switch to kernel_only mode
+    mmu_configure_tcr_bootstrap_dual(VA_BITS_48 ? 48 : 39);
     
     // Set translation table bases (replacing msr ttbr0_el1, x19 and msr ttbr1_el1, x18)
     mmu_set_ttbr_bases(page_table_phys_ttbr0, page_table_phys_ttbr1);
@@ -1989,10 +1992,13 @@ void mmu_trampoline_continuation_point(void) {
     uart_hex64_early(vbar_high);
     *uart = '\r'; *uart = '\n';
     
-    // Set EPD for runtime kernel-only mode (EPD0=1, EPD1=0)
-    mmu_policy_set_epd_runtime_kernel();
+    // ✅ CRITICAL: Switch TCR from bootstrap-dual mode to kernel-only mode
+    // Now that we're running in high VA (TTBR1 space), we can safely disable TTBR0
+    // This sets EPD0=1 (disable TTBR0), EPD1=0 (enable TTBR1)
+    // Uses full TCR reconfiguration for architectural safety
+    mmu_configure_tcr_kernel_only(VA_BITS_48 ? 48 : 39);
     
-    *uart = 'C'; *uart = 'O'; *uart = 'N'; *uart = 'T'; *uart = ':'; *uart = 'E'; *uart = 'P'; *uart = 'D'; *uart = '+';
+    *uart = 'C'; *uart = 'O'; *uart = 'N'; *uart = 'T'; *uart = ':'; *uart = 'T'; *uart = 'C'; *uart = 'R'; *uart = '+';
     *uart = '\r'; *uart = '\n';
     
     // STEP 5: Validation test - trigger sync exception to verify vectors work in TTBR1
