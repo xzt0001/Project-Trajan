@@ -353,8 +353,10 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     uart_hex64_early(page_table_phys_ttbr1);
     *uart = '\r'; *uart = '\n';
     
-    // POLICY LAYER: Use authoritative TCR configuration (eliminates duplication)
-    mmu_configure_tcr_kernel_only(VA_BITS_48 ? 48 : 39);
+    // ✅ CRITICAL: Use bootstrap-dual TCR configuration for entire MMU init path
+    // This ensures EPD0=0 (TTBR0 enabled) throughout the initialization sequence
+    // After jumping to high VA, continuation function will switch to kernel-only mode
+    mmu_configure_tcr_bootstrap_dual(VA_BITS_48 ? 48 : 39);
     
     // Get TCR value for assembly input (policy layer is authoritative source)
     uint64_t tcr;
@@ -541,7 +543,7 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         // Save critical values
         "mov x19, %0\n"              // x19 = page_table_base_ttbr0
         "mov x18, %1\n"              // x18 = page_table_base_ttbr1
-        "mov x20, %2\n"              // x20 = tcr value
+        "mov x20, %2\n"              // x20 = tcr value, hang at TLOW marker, likely due to EPD0=1 loaded into X20 before MMU enablement.
         "mov x21, %3\n"              // x21 = mair value  
         "mov x22, %4\n"              // x22 = continuation_phys
         "mov x24, %5\n"              // x24 = continuation_virt
@@ -609,6 +611,15 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     mmu_set_ttbr_bases(page_table_phys_ttbr0, page_table_phys_ttbr1);
     
     *uart = 'R'; *uart = 'E'; *uart = 'G'; *uart = ':'; *uart = 'O'; *uart = 'K';
+    *uart = '\r'; *uart = '\n';
+    
+    // ✅ DIAGNOSTIC CHECKPOINT 1: Verify TCR immediately after configuration
+    uint64_t tcr_checkpoint1;
+    __asm__ volatile("mrs %0, tcr_el1" : "=r"(tcr_checkpoint1));
+    *uart = 'T'; *uart = 'C'; *uart = 'R'; *uart = '1'; *uart = ':';
+    uart_hex64_early(tcr_checkpoint1);
+    *uart = ' '; *uart = 'E'; *uart = 'P'; *uart = 'D'; *uart = '0'; *uart = ':';
+    *uart = '0' + ((tcr_checkpoint1 >> 7) & 1);
     *uart = '\r'; *uart = '\n';
     
     // Resume assembly block for cache flush and debug infrastructure
@@ -1603,6 +1614,15 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     
     // ✅ POLICY LAYER CALL - Replace SCTLR write with centralized policy
     *uart = 'M'; *uart = 'M'; *uart = 'U'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
+    *uart = '\r'; *uart = '\n';
+    
+    // ✅ DIAGNOSTIC CHECKPOINT 2: Verify TCR right before trampoline jump
+    uint64_t tcr_checkpoint2;
+    __asm__ volatile("mrs %0, tcr_el1" : "=r"(tcr_checkpoint2));
+    *uart = 'T'; *uart = 'C'; *uart = 'R'; *uart = '2'; *uart = ':';
+    uart_hex64_early(tcr_checkpoint2);
+    *uart = ' '; *uart = 'E'; *uart = 'P'; *uart = 'D'; *uart = '0'; *uart = ':';
+    *uart = '0' + ((tcr_checkpoint2 >> 7) & 1);
     *uart = '\r'; *uart = '\n';
     
     // Jump to trampoline for atomic PC transition TTBR0→TTBR1

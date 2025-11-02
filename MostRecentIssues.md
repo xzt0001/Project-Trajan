@@ -1,5 +1,13 @@
 Here are the most up to date info about my development progress focusing on low level debugging. 
 
+November 1st, 2025
+
+Added two checkpoints in memory_core.c. First is on line 616-623, right after mmu_configure _tcr_bootstrap_dual(). The second one is on line 1619-1626, right before asm volatile("b mmu_trampoline_low") at line 1633.
+
+Based on the latest log, TCR configuration is unlikely to be the issue here, and the EPD0=1 problem hasmost likely been solved.
+
+Latest kernel log: https://docs.google.com/document/d/19gOEpu9I1nmw_pmeX6HstzfPoXtar9lhpyTOfN-5i2Y/edit?usp=sharing 
+
 ## October 29th, 2025 - Attempt to fix the TLOW hang in trampoline.S
 
 **Problem: System hung at "TLOW" marker in trampoline.S during MMU enable sequence.
