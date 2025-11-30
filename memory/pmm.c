@@ -825,36 +825,68 @@ void map_uart(void) {
     // Save the phys/virt addresses for diagnostic use
     register_mapping(UART_VIRT, UART_VIRT + 0x1000, UART_PHYS, uart_flags, "UART MMIO");
 
-    // NEW: also create an *identity* mapping for the UART MMIO page so
-    // that the very first physical UART access that occurs immediately
-    // after the M-bit is set will translate successfully.  We cannot use
-    // map_kernel_page() because its internals eventually call map_page(),
-    // and map_page() intentionally skips any VA or PA inside the UART
-    // range to avoid double-mapping.  Therefore we build the entry
-    // manually, mirroring the logic used a few lines above for the high
-    // virtual mapping, but this time with VA = PA.
-
+    // ========================================================================
+    // CRITICAL: Identity map UART for trampoline debug output after MMU enable
+    // The trampoline uses physical UART address (0x09000000) for printing,
+    // so we need VA 0x09000000 → PA 0x09000000 in TTBR0 page tables.
+    // ========================================================================
+    
+    *uart = 'I'; *uart = 'D'; *uart = ':'; *uart = 'S'; *uart = 'T'; *uart = 'A'; *uart = 'R'; *uart = 'T';
+    *uart = '\r'; *uart = '\n';
+    
+    // Get L3 table for the UART physical address in TTBR0 (identity mapping)
     uint64_t* l3_table_phys = get_l3_table_for_addr(l0_table, UART_PHYS);
+    
     if (l3_table_phys) {
+        *uart = 'I'; *uart = 'D'; *uart = ':'; *uart = 'L'; *uart = '3'; *uart = 'O'; *uart = 'K';
+        *uart = '\r'; *uart = '\n';
+        
         uint64_t l3_idx_phys = (UART_PHYS >> 12) & 0x1FF;
+        
+        // Device memory flags: Valid, Page, AF, Device-nGnRE, RW, Non-executable
         uint64_t pte_phys = UART_PHYS |
                            PTE_VALID | PTE_PAGE | PTE_AF |
-                           PTE_SH_NONE |       // Device memory must be non-shareable
                            PTE_DEVICE_nGnRE |
                            PTE_AP_RW |
-                           PTE_PXN | PTE_UXN;  // never executable
-
-        // Cache maintenance
+                           PTE_PXN | PTE_UXN;
+        
+        // Debug: Show what we're about to write
+        *uart = 'I'; *uart = 'D'; *uart = ':';
+        *uart = 'A'; uart_hex64_early(UART_PHYS);
+        *uart = 'I'; uart_hex64_early(l3_idx_phys);
+        *uart = 'P'; uart_hex64_early(pte_phys);
+        *uart = '\r'; *uart = '\n';
+        
+        // Cache maintenance before writing PTE
         asm volatile("dc civac, %0" :: "r"(&l3_table_phys[l3_idx_phys]) : "memory");
         asm volatile("dsb ish" ::: "memory");
-
+        
+        // Write the identity mapping PTE
         l3_table_phys[l3_idx_phys] = pte_phys;
-
+        
+        // Cache maintenance after writing PTE
         asm volatile("dc civac, %0" :: "r"(&l3_table_phys[l3_idx_phys]) : "memory");
         asm volatile("dsb ish" ::: "memory");
-
+        
+        // TLB invalidation
+        mmu_comprehensive_tlbi_sequence();
+        
+        // Verify the write
+        uint64_t verify_pte = l3_table_phys[l3_idx_phys];
+        *uart = 'I'; *uart = 'D'; *uart = ':'; *uart = 'V'; uart_hex64_early(verify_pte);
+        *uart = '\r'; *uart = '\n';
+        
         // Register for diagnostics
-        register_mapping(UART_PHYS, UART_PHYS + 0x1000, UART_PHYS, pte_phys, "UART MMIO (ID)");
+        register_mapping(UART_PHYS, UART_PHYS + 0x1000, UART_PHYS, pte_phys, "UART MMIO (Identity)");
+        
+        *uart = 'I'; *uart = 'D'; *uart = ':'; *uart = 'O'; *uart = 'K';
+        *uart = '\r'; *uart = '\n';
+    } else {
+        // CRITICAL FAILURE: Could not get L3 table for identity mapping
+        *uart = 'I'; *uart = 'D'; *uart = ':'; *uart = 'F'; *uart = 'A'; *uart = 'I'; *uart = 'L';
+        *uart = '\r'; *uart = '\n';
+        *uart = 'X'; *uart = 'L'; *uart = '3'; *uart = 'I'; *uart = 'D';
+        *uart = '\r'; *uart = '\n';
     }
 }
 

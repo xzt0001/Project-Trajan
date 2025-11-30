@@ -37,6 +37,10 @@
 #define PTE_TABLE       (1UL << 1)   // Entry points to another table
 #endif
 
+#ifndef PTE_PAGE
+#define PTE_PAGE        (1UL << 1)   // Page descriptor bit (required for L3 entries)
+#endif
+
 #define PTE_AF          (1UL << 10)  // Access Flag - must be set to avoid access faults
 
 /* ========================================================================
@@ -104,16 +108,16 @@
 #define PTE_ADDR_MASK   (~0xFFFUL)   // Physical address mask for page table entries (bits [47:12])
 
 /** Combined flags for typical memory regions */
-#define PTE_KERN_DATA   (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RW | PTE_NOEXEC)
-#define PTE_KERN_RODATA (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO | PTE_NOEXEC)
+#define PTE_KERN_DATA   (PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RW | PTE_NOEXEC)
+#define PTE_KERN_RODATA (PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO | PTE_NOEXEC)
 #define PTE_KERN_TEXT   (PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO)
 
-#define PTE_USER_DATA   (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RW_EL0 | PTE_NOEXEC)
-#define PTE_USER_RODATA (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO_EL0 | PTE_NOEXEC)
-#define PTE_USER_TEXT   (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO_EL0 | PTE_UXN)
+#define PTE_USER_DATA   (PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RW_EL0 | PTE_NOEXEC)
+#define PTE_USER_RODATA (PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO_EL0 | PTE_NOEXEC)
+#define PTE_USER_TEXT   (PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RO_EL0 | PTE_UXN)
 
 /** Additional flag combinations for MMIO regions */
-#define PTE_DEVICE      (PTE_VALID | PTE_AF | PTE_SH_OUTER | PTE_DEVICE_nGnRE | PTE_AP_RW | PTE_NOEXEC)
+#define PTE_DEVICE      (PTE_VALID | PTE_PAGE | PTE_AF | PTE_SH_OUTER | PTE_DEVICE_nGnRE | PTE_AP_RW | PTE_NOEXEC)
 
 /** Additional definitions for backward compatibility */
 #define PTE_KERNEL_EXEC (PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_NORMAL | PTE_AP_RW)  // Kernel executable memory

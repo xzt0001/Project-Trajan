@@ -57,11 +57,18 @@ mmu_trampoline_low:
     // Just enable MMU and jump to high virtual address
     // ============================================================
     
+    // Pre-MMU barrier sequence (defensive - ensures all prior ops complete)
+    dsb  sy                      // Ensure page tables visible to MMU hardware
+    isb                          // Sync context before system register write
+    
     // Enable MMU by setting M bit in SCTLR_EL1
     mrs  x0, sctlr_el1
     orr  x0, x0, #0x1           // Set M bit (MMU enable)
     msr  sctlr_el1, x0
-    isb                          // Mandatory synchronization after MMU enable
+    
+    // Post-MMU barrier sequence (mandatory per ARM ARM)
+    dsb  sy                      // Ensure SCTLR write completes
+    isb                          // Synchronize instruction stream with MMU ON
     
     // Verify MMU is enabled (defensive check)
     mrs  x0, sctlr_el1
@@ -87,18 +94,10 @@ mmu_trampoline_low:
     
 1:  // MMU enabled successfully
     
-    // Step 4: Print MMU enable success marker
-    mov w20, #'M'
-    str w20, [x19]
-    mov w20, #'+'
-    str w20, [x19]
-    mov w20, #'\r'
-    str w20, [x19]
-    mov w20, #'\n'
-    str w20, [x19]
-    
     // ============================================================
-    // Now safe to jump to high virtual address (MMU is enabled)
+    // DIAGNOSTIC: Skip UART prints after MMU enable to test if
+    // the issue is specifically with UART identity mapping.
+    // Jump directly to high virtual address.
     // ============================================================
     
     // Load HIGH_VIRT_BASE constant
@@ -124,22 +123,13 @@ mmu_trampoline_low:
  * Exit: Calls continuation point in high virtual space
  */
 mmu_trampoline_high:
-    // Debug marker: Show we reached high virtual address space
-    mov x19, #0x09000000        // UART base (identity-mapped, accessible)
-    mov w20, #'T'
-    str w20, [x19]
-    mov w20, #'H'
-    str w20, [x19]
-    mov w20, #'I'
-    str w20, [x19]
-    mov w20, #'G'
-    str w20, [x19]
-    mov w20, #'H'
-    str w20, [x19]
-    mov w20, #'\r'
-    str w20, [x19]
-    mov w20, #'\n'
-    str w20, [x19]
+    // ============================================================
+    // DIAGNOSTIC: Skip UART prints here too.
+    // If we reach the continuation point and it prints, we know:
+    // 1. MMU enable succeeded
+    // 2. Jump to high address succeeded
+    // 3. UART works via HIGH virtual mapping (0xFFFF800009000000)
+    // ============================================================
     
     // Continue to post-MMU C code (now safe - MMU is enabled, we're in TTBR1)
     bl mmu_trampoline_continuation_point

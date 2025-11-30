@@ -1624,6 +1624,137 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     *uart = ' '; *uart = 'E'; *uart = 'P'; *uart = 'D'; *uart = '0'; *uart = ':';
     *uart = '0' + ((tcr_checkpoint2 >> 7) & 1);
     *uart = '\r'; *uart = '\n';
+
+    // DIAGNOSTIC: Verify trampoline identity mapping exists in TTBR0 table
+    uint64_t tramp_test_addr = tramp_phys;
+    uint64_t* test_l3 = get_l3_table_for_addr(page_table_base, tramp_test_addr);
+    if (test_l3) {
+        uint64_t l3_idx = (tramp_test_addr >> 12) & 0x1FF;
+        uint64_t pte = test_l3[l3_idx];
+        *uart = 'P'; *uart = 'T'; *uart = 'E'; *uart = ':';
+        uart_hex64_early(pte);
+        *uart = ' '; *uart = 'V'; *uart = ':';
+        *uart = '0' + ((pte & PTE_VALID) ? 1 : 0);
+        *uart = '\r'; *uart = '\n';
+    } else {
+        *uart = 'N'; *uart = 'O'; *uart = 'L'; *uart = '3'; *uart = '!';
+        *uart = '\r'; *uart = '\n';
+    }
+
+    // DIAGNOSTIC: Verify stack is identity-mapped
+    uint64_t current_sp;
+    __asm__ volatile("mov %0, sp" : "=r"(current_sp));
+    uint64_t sp_page = current_sp & ~0xFFF;
+    uint64_t* sp_l3 = get_l3_table_for_addr(page_table_base, sp_page);
+    if (sp_l3) {
+        uint64_t sp_l3_idx = (sp_page >> 12) & 0x1FF;
+        uint64_t sp_pte = sp_l3[sp_l3_idx];
+        *uart = 'S'; *uart = 'P'; *uart = ':';
+        uart_hex64_early(current_sp);
+        *uart = ' '; *uart = 'P'; *uart = 'T'; *uart = 'E'; *uart = ':';
+        uart_hex64_early(sp_pte);
+        *uart = ' '; *uart = 'V'; *uart = ':';
+        *uart = '0' + ((sp_pte & PTE_VALID) ? 1 : 0);
+        *uart = '\r'; *uart = '\n';
+    } else {
+        *uart = 'S'; *uart = 'P'; *uart = ':'; *uart = 'N'; *uart = 'O'; *uart = 'L'; *uart = '3'; *uart = '!';
+        *uart = '\r'; *uart = '\n';
+    }
+
+    // CRITICAL DIAGNOSTIC: Dump FULL translation path for UART (0x09000000)
+    // We need to verify L0→L1→L2→L3 entries, not just L3!
+    #define UART_PHYS_DIAG 0x09000000UL
+    {
+        // Calculate indices for 48-bit VA, 4KB granule
+        uint64_t va = UART_PHYS_DIAG;
+        uint64_t l0_idx = (va >> 39) & 0x1FF;  // Should be 0
+        uint64_t l1_idx = (va >> 30) & 0x1FF;  // Should be 0
+        uint64_t l2_idx = (va >> 21) & 0x1FF;  // Should be 72
+        uint64_t l3_idx = (va >> 12) & 0x1FF;  // Should be 0
+        
+        *uart = 'U'; *uart = 'W'; *uart = 'A'; *uart = 'L'; *uart = 'K'; *uart = ':';
+        *uart = '\r'; *uart = '\n';
+        
+        // L0 entry
+        uint64_t* l0_table = page_table_base;
+        uint64_t l0_entry = l0_table[l0_idx];
+        *uart = 'L'; *uart = '0'; *uart = '[';
+        *uart = '0' + l0_idx;
+        *uart = ']'; *uart = '=';
+        uart_hex64_early(l0_entry);
+        *uart = ' '; *uart = 'V'; *uart = ':';
+        *uart = '0' + ((l0_entry & 0x1) ? 1 : 0);
+        *uart = ' '; *uart = 'T'; *uart = ':';
+        *uart = '0' + ((l0_entry & 0x2) ? 1 : 0);  // Table bit
+        *uart = '\r'; *uart = '\n';
+        
+        if ((l0_entry & 0x3) != 0x3) {
+            *uart = 'L'; *uart = '0'; *uart = ':'; *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+            *uart = '\r'; *uart = '\n';
+        } else {
+            // L1 entry
+            uint64_t* l1_table = (uint64_t*)(l0_entry & 0x0000FFFFFFFFF000UL);
+            uint64_t l1_entry = l1_table[l1_idx];
+            *uart = 'L'; *uart = '1'; *uart = '[';
+            *uart = '0' + l1_idx;
+            *uart = ']'; *uart = '=';
+            uart_hex64_early(l1_entry);
+            *uart = ' '; *uart = 'V'; *uart = ':';
+            *uart = '0' + ((l1_entry & 0x1) ? 1 : 0);
+            *uart = ' '; *uart = 'T'; *uart = ':';
+            *uart = '0' + ((l1_entry & 0x2) ? 1 : 0);
+            *uart = '\r'; *uart = '\n';
+            
+            if ((l1_entry & 0x3) != 0x3) {
+                *uart = 'L'; *uart = '1'; *uart = ':'; *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+                *uart = '\r'; *uart = '\n';
+            } else {
+                // L2 entry
+                uint64_t* l2_table = (uint64_t*)(l1_entry & 0x0000FFFFFFFFF000UL);
+                uint64_t l2_entry = l2_table[l2_idx];
+                *uart = 'L'; *uart = '2'; *uart = '[';
+                // Print l2_idx as decimal (72 = 7*10+2)
+                *uart = '0' + (l2_idx / 10);
+                *uart = '0' + (l2_idx % 10);
+                *uart = ']'; *uart = '=';
+                uart_hex64_early(l2_entry);
+                *uart = ' '; *uart = 'V'; *uart = ':';
+                *uart = '0' + ((l2_entry & 0x1) ? 1 : 0);
+                *uart = ' '; *uart = 'T'; *uart = ':';
+                *uart = '0' + ((l2_entry & 0x2) ? 1 : 0);
+                *uart = '\r'; *uart = '\n';
+                
+                if ((l2_entry & 0x3) != 0x3) {
+                    *uart = 'L'; *uart = '2'; *uart = ':'; *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+                    *uart = '\r'; *uart = '\n';
+                } else {
+                    // L3 entry (page entry)
+                    uint64_t* l3_table = (uint64_t*)(l2_entry & 0x0000FFFFFFFFF000UL);
+                    uint64_t l3_entry = l3_table[l3_idx];
+                    *uart = 'L'; *uart = '3'; *uart = '[';
+                    *uart = '0' + l3_idx;
+                    *uart = ']'; *uart = '=';
+                    uart_hex64_early(l3_entry);
+                    *uart = ' '; *uart = 'V'; *uart = ':';
+                    *uart = '0' + ((l3_entry & 0x1) ? 1 : 0);
+                    *uart = ' '; *uart = 'P'; *uart = ':';
+                    *uart = '0' + ((l3_entry & 0x2) ? 1 : 0);  // Page bit
+                    *uart = '\r'; *uart = '\n';
+                    
+                    // Verify PA matches
+                    uint64_t pte_pa = l3_entry & 0x0000FFFFFFFFF000UL;
+                    *uart = 'P'; *uart = 'A'; *uart = ':';
+                    uart_hex64_early(pte_pa);
+                    if (pte_pa == UART_PHYS_DIAG) {
+                        *uart = ' '; *uart = 'O'; *uart = 'K';
+                    } else {
+                        *uart = ' '; *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+                    }
+                    *uart = '\r'; *uart = '\n';
+                }
+            }
+        }
+    }
     
     // Jump to trampoline for atomic PC transition TTBR0→TTBR1
     *uart = 'J'; *uart = 'M'; *uart = 'P'; *uart = ':'; *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'M'; *uart = 'P';
@@ -1982,10 +2113,12 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
  */
 __attribute__((noinline))
 void mmu_trampoline_continuation_point(void) {
-    volatile uint32_t* uart = (volatile uint32_t*)0x09000000;
+    // CRITICAL: Use HIGH virtual UART address (TTBR1) instead of identity-mapped (TTBR0)
+    // This bypasses the UART identity mapping issue and tests TTBR1 UART mapping
+    volatile uint32_t* uart = (volatile uint32_t*)UART_VIRT;  // 0xFFFF800009000000
     
     // Debug marker: We're in the continuation point
-    *uart = 'C'; *uart = 'O'; *uart = 'N'; *uart = 'T'; *uart = ':'; *uart = 'E'; *uart = 'N'; *uart = 'T'; *uart = 'E'; *uart = 'R';
+    *uart = 'C'; *uart = 'O'; *uart = 'N'; *uart = 'T'; *uart = ':'; *uart = 'H'; *uart = 'I'; *uart = 'G'; *uart = 'H';
     *uart = '\r'; *uart = '\n';
     
     // STEP 1 PART 2: Update VBAR to high virtual address (complete Option D!)
@@ -2006,10 +2139,9 @@ void mmu_trampoline_continuation_point(void) {
     // Update VBAR to high virtual address
     asm volatile("msr vbar_el1, %0\n\tisb" :: "r"(vbar_high));
     
-    // STEP 4: Log second VBAR write
+    // STEP 4: Log second VBAR write (skip uart_hex64_early - it uses UART_PHYS)
     *uart = 'V'; *uart = 'B'; *uart = 'A'; *uart = 'R'; *uart = ':';
-    *uart = 'H'; *uart = 'I'; *uart = '=';
-    uart_hex64_early(vbar_high);
+    *uart = 'H'; *uart = 'I'; *uart = 'G'; *uart = 'H';
     *uart = '\r'; *uart = '\n';
     
     // ✅ CRITICAL: Switch TCR from bootstrap-dual mode to kernel-only mode

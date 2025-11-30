@@ -1,10 +1,38 @@
 Here are the most up to date info about my development progress focusing on low level debugging. 
 
+November 29th, 2025
+
+Eliminating the UART identity mapping issue:
+
+1: initial diagnosis that UART at physical address 0x09000000 wasn't identity-mapped in TTBR0, causing a data abort when trampoline tried to print M+ after MMU enable.
+
+2: Add PTE_PAGE to Macros in memory_config.h
+
+3: Addd debug output to UART identity mapping in pmm.c
+
+4: Verify UART mapping before the jump in memory_core.c, inside enable_mmu_enhanced()
+
+5: Added UWALK: diagnostic to dump the complete L0→L1→L2→L3 translation path for address 0x09000000.
+
+6: Bypass UART identity mapping entirely.
+
+Current state:
+What's Working
+    TTBR0 = 0x40000000
+    TTBR1 = 0x40001000
+    TCR_EL1 = 0x6135103510, EPD0=0 (TTBR0 walks enabled)
+    MAIR_EL1 = 0x444ff00
+    VBAR_EL1 = 0x41000000 (identity-mapped)
+    Trampoline at 0x40090000 (identity-mapped)
+    All page table entries verified valid
+
+Latest kernel log: https://docs.google.com/document/d/1vLudiqmVUrmU60hFJ4ll6wA0aMs99aYT64jyB9rZSKY/edit?usp=sharing
+
 November 1st, 2025
 
 Added two checkpoints in memory_core.c. First is on line 616-623, right after mmu_configure _tcr_bootstrap_dual(). The second one is on line 1619-1626, right before asm volatile("b mmu_trampoline_low") at line 1633.
 
-Based on the latest log, TCR configuration is unlikely to be the issue here, and the EPD0=1 problem hasmost likely been solved.
+Based on the latest log, TCR configuration is unlikely to be the issue here, and the EPD0=1 problem has been solved.
 
 Latest kernel log: https://docs.google.com/document/d/19gOEpu9I1nmw_pmeX6HstzfPoXtar9lhpyTOfN-5i2Y/edit?usp=sharing 
 
