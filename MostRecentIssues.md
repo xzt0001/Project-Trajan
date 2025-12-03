@@ -1,4 +1,10 @@
-Here are the most up to date info about my development progress focusing on low level debugging. 
+Here are the most up to date info about my development progress focusing on low level debugging.
+
+Dec 3rd, 2025
+
+Further diagnostic shows TTBR0 is fine for both UART and the low trampoline mapping. Next step would be verifying TTBR1.
+
+Latest kertnel log: https://docs.google.com/document/d/10p0WgIVVAWx1Xd_6aGzb7D_w4jEREImnAwPDRbgOoSw/edit?tab=t.0
 
 November 29th, 2025
 

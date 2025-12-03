@@ -856,14 +856,14 @@ void map_uart(void) {
         *uart = 'I'; uart_hex64_early(l3_idx_phys);
         *uart = 'P'; uart_hex64_early(pte_phys);
         *uart = '\r'; *uart = '\n';
-        
+
         // Cache maintenance before writing PTE
         asm volatile("dc civac, %0" :: "r"(&l3_table_phys[l3_idx_phys]) : "memory");
         asm volatile("dsb ish" ::: "memory");
-        
+
         // Write the identity mapping PTE
         l3_table_phys[l3_idx_phys] = pte_phys;
-        
+
         // Cache maintenance after writing PTE
         asm volatile("dc civac, %0" :: "r"(&l3_table_phys[l3_idx_phys]) : "memory");
         asm volatile("dsb ish" ::: "memory");
@@ -875,7 +875,7 @@ void map_uart(void) {
         uint64_t verify_pte = l3_table_phys[l3_idx_phys];
         *uart = 'I'; *uart = 'D'; *uart = ':'; *uart = 'V'; uart_hex64_early(verify_pte);
         *uart = '\r'; *uart = '\n';
-        
+
         // Register for diagnostics
         register_mapping(UART_PHYS, UART_PHYS + 0x1000, UART_PHYS, pte_phys, "UART MMIO (Identity)");
         

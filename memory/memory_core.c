@@ -1624,7 +1624,7 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
     *uart = ' '; *uart = 'E'; *uart = 'P'; *uart = 'D'; *uart = '0'; *uart = ':';
     *uart = '0' + ((tcr_checkpoint2 >> 7) & 1);
     *uart = '\r'; *uart = '\n';
-
+    
     // DIAGNOSTIC: Verify trampoline identity mapping exists in TTBR0 table
     uint64_t tramp_test_addr = tramp_phys;
     uint64_t* test_l3 = get_l3_table_for_addr(page_table_base, tramp_test_addr);
@@ -1755,7 +1755,84 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
             }
         }
     }
-    
+
+    // Check L1[1] for trampoline/vector range (1GB-2GB)
+    uint64_t* l0_table = (uint64_t*)page_table_base;
+    uint64_t l1_table_addr = l0_table[0] & ~0xFFFUL;
+    uint64_t* l1_table = (uint64_t*)l1_table_addr;
+    uint64_t l1_entry_1 = l1_table[1];  // L1[1] for addresses >= 1GB
+
+    *uart = 'L'; *uart = '1'; *uart = '['; *uart = '1'; *uart = ']'; *uart = '=';
+    uart_hex64_early(l1_entry_1);
+    *uart = ' '; *uart = 'V'; *uart = ':';
+    *uart = '0' + ((l1_entry_1 & 1) ? 1 : 0);  // Valid bit
+    *uart = ' '; *uart = 'T'; *uart = ':';
+    *uart = '0' + ((l1_entry_1 & 2) ? 1 : 0);  // Table bit
+    *uart = '\r'; *uart = '\n';
+
+    // FULL TRAMPOLINE WALK: Verify L2[0] and L3[144] for address 0x40090000
+    // This verifies the COMPLETE translation path for the trampoline code
+    if ((l1_entry_1 & 0x3) == 0x3) {  // L1[1] is valid table entry
+        // Get L2 table address from L1[1]
+        uint64_t l2_table_addr = l1_entry_1 & 0x0000FFFFFFFFF000UL;
+        uint64_t* l2_table = (uint64_t*)l2_table_addr;
+        
+        // Force cache flush for L2 table before reading
+        __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(l2_table_addr) : "memory");
+        
+        // L2 index for 0x40090000 = (0x40090000 >> 21) & 0x1FF = 0
+        uint64_t l2_entry_0 = l2_table[0];
+        
+        *uart = 'L'; *uart = '2'; *uart = '['; *uart = '0'; *uart = ']'; *uart = '=';
+        uart_hex64_early(l2_entry_0);
+        *uart = ' '; *uart = 'V'; *uart = ':';
+        *uart = '0' + ((l2_entry_0 & 1) ? 1 : 0);
+        *uart = ' '; *uart = 'T'; *uart = ':';
+        *uart = '0' + ((l2_entry_0 & 2) ? 1 : 0);
+        *uart = '\r'; *uart = '\n';
+        
+        if ((l2_entry_0 & 0x3) == 0x3) {  // L2[0] is valid table entry
+            // Get L3 table address from L2[0]
+            uint64_t l3_table_addr = l2_entry_0 & 0x0000FFFFFFFFF000UL;
+            uint64_t* l3_table = (uint64_t*)l3_table_addr;
+            
+            // Force cache flush for L3 table before reading
+            __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(l3_table_addr) : "memory");
+            
+            // L3 index for 0x40090000 = (0x40090000 >> 12) & 0x1FF = 0x90 = 144
+            uint64_t l3_entry_144 = l3_table[144];
+            
+            *uart = 'L'; *uart = '3'; *uart = '['; 
+            *uart = '1'; *uart = '4'; *uart = '4';  // Index 144
+            *uart = ']'; *uart = '=';
+            uart_hex64_early(l3_entry_144);
+            *uart = ' '; *uart = 'V'; *uart = ':';
+            *uart = '0' + ((l3_entry_144 & 1) ? 1 : 0);
+            *uart = ' '; *uart = 'P'; *uart = ':';
+            *uart = '0' + ((l3_entry_144 & 2) ? 1 : 0);  // Page bit for L3
+            *uart = '\r'; *uart = '\n';
+            
+            // Verify physical address matches trampoline
+            uint64_t l3_pa = l3_entry_144 & 0x0000FFFFFFFFF000UL;
+            *uart = 'T'; *uart = 'R'; *uart = 'M'; *uart = 'P'; *uart = '_'; *uart = 'P'; *uart = 'A'; *uart = ':';
+            uart_hex64_early(l3_pa);
+            if (l3_pa == (tramp_phys & ~0xFFFUL)) {
+                *uart = ' '; *uart = 'O'; *uart = 'K';
+            } else {
+                *uart = ' '; *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+            }
+            *uart = '\r'; *uart = '\n';
+        } else {
+            *uart = 'L'; *uart = '2'; *uart = '['; *uart = '0'; *uart = ']'; *uart = ':';
+            *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+            *uart = '\r'; *uart = '\n';
+        }
+    } else {
+        *uart = 'L'; *uart = '1'; *uart = '['; *uart = '1'; *uart = ']'; *uart = ':';
+        *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+        *uart = '\r'; *uart = '\n';
+    }
+        
     // Jump to trampoline for atomic PC transition TTBR0→TTBR1
     *uart = 'J'; *uart = 'M'; *uart = 'P'; *uart = ':'; *uart = 'T'; *uart = 'R'; *uart = 'A'; *uart = 'M'; *uart = 'P';
     *uart = '\r'; *uart = '\n';
