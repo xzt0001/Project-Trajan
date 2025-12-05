@@ -61,14 +61,50 @@ mmu_trampoline_low:
     dsb  sy                      // Ensure page tables visible to MMU hardware
     isb                          // Sync context before system register write
     
+    // DIAGNOSTIC: Print "E1" - about to read SCTLR
+    mov w20, #'E'
+    str w20, [x19]
+    mov w20, #'1'
+    str w20, [x19]
+    
     // Enable MMU by setting M bit in SCTLR_EL1
     mrs  x0, sctlr_el1
+    
+    // DIAGNOSTIC: Print "E2" - SCTLR read succeeded, about to modify
+    mov w20, #'E'
+    str w20, [x19]
+    mov w20, #'2'
+    str w20, [x19]
+    
     orr  x0, x0, #0x1           // Set M bit (MMU enable)
-    msr  sctlr_el1, x0
+    
+    // DIAGNOSTIC: Print "E3" - about to write SCTLR (MMU ENABLE!)
+    mov w20, #'E'
+    str w20, [x19]
+    mov w20, #'3'
+    str w20, [x19]
+    
+    msr  sctlr_el1, x0          // <<< THE CRITICAL INSTRUCTION
+    
+    // DIAGNOSTIC: Print "E4" - MSR completed! (if we see this, MMU enable succeeded)
+    mov w20, #'E'
+    str w20, [x19]
+    mov w20, #'4'
+    str w20, [x19]
     
     // Post-MMU barrier sequence (mandatory per ARM ARM)
     dsb  sy                      // Ensure SCTLR write completes
     isb                          // Synchronize instruction stream with MMU ON
+    
+    // DIAGNOSTIC: Print "E5" - barriers completed
+    mov w20, #'E'
+    str w20, [x19]
+    mov w20, #'5'
+    str w20, [x19]
+    mov w20, #'\r'
+    str w20, [x19]
+    mov w20, #'\n'
+    str w20, [x19]
     
     // Verify MMU is enabled (defensive check)
     mrs  x0, sctlr_el1
@@ -95,24 +131,51 @@ mmu_trampoline_low:
 1:  // MMU enabled successfully
     
     // ============================================================
-    // DIAGNOSTIC: Skip UART prints after MMU enable to test if
-    // the issue is specifically with UART identity mapping.
-    // Jump directly to high virtual address.
+    // DIAGNOSTIC: Print "M+" to confirm MMU enable verification passed
+    // x19 still holds UART address (0x09000000), identity-mapped in TTBR0
     // ============================================================
+    mov w20, #'M'
+    str w20, [x19]
+    mov w20, #'+'
+    str w20, [x19]
+    mov w20, #'\r'
+    str w20, [x19]
+    mov w20, #'\n'
+    str w20, [x19]
     
-    // Load HIGH_VIRT_BASE constant
-#if VA_BITS_48
-    mov x21, #0x8000            // HIGH_VIRT_BASE = 0xFFFF800000000000
-    movk x21, #0xFFFF, lsl #48  // Set upper 16 bits
-#else  
-    mov x21, #0x8000            // HIGH_VIRT_BASE = 0xFFFFFF8000000000  
-    movk x21, #0xFFFF, lsl #48  // Set bits 48-63
-    movk x21, #0xFFFF, lsl #32  // Set bits 32-47
-#endif
+    // Load HIGH_VIRT_BASE constant = 0xFFFF800000000000 (for 48-bit VA)
+    // 
+    // BUG FIX: Original code placed 0x8000 at bits [15:0] instead of [47:32]
+    // This caused branch target 0xFFFF000040091XXX instead of 0xFFFF800040091XXX
+    // resulting in L0[0] lookup in TTBR1 (unmapped) instead of L0[256] (mapped)
+    //
+    // NOTE: Removed #if/#else preprocessor conditionals - assembler doesn't process them!
+    // Using 48-bit VA scheme (matches TCR_EL1 T0SZ=16, T1SZ=16 configuration)
+    //
+    // Correctly construct 0xFFFF800000000000:
+    //   Bits [63:48] = 0xFFFF (canonical extension)
+    //   Bits [47:32] = 0x8000 (high address marker)
+    //   Bits [31:0]  = 0x00000000
+    //
+    movz x21, #0x8000, lsl #32      // x21 = 0x0000_8000_0000_0000 (0x8000 at bits [47:32])
+    movk x21, #0xFFFF, lsl #48      // x21 = 0xFFFF_8000_0000_0000 (HIGH_VIRT_BASE)
     
     // Calculate high virtual address of trampoline_high
     adr x20, mmu_trampoline_high    // Get physical address of high trampoline
     orr x20, x20, x21               // Add HIGH_VIRT_BASE to create high virtual address
+    
+    // DIAGNOSTIC: Print "BR" before branch to high address
+    // Save x20 (branch target) in x22 temporarily
+    mov x22, x20
+    mov w20, #'B'
+    str w20, [x19]
+    mov w20, #'R'
+    str w20, [x19]
+    mov w20, #'\r'
+    str w20, [x19]
+    mov w20, #'\n'
+    str w20, [x19]
+    mov x20, x22                    // Restore branch target
     
     // Atomic jump to high virtual space (MMU enabled, translation works)
     br x20                          // Branch to TTBR1 equivalent
@@ -124,12 +187,24 @@ mmu_trampoline_low:
  */
 mmu_trampoline_high:
     // ============================================================
-    // DIAGNOSTIC: Skip UART prints here too.
-    // If we reach the continuation point and it prints, we know:
-    // 1. MMU enable succeeded
-    // 2. Jump to high address succeeded
-    // 3. UART works via HIGH virtual mapping (0xFFFF800009000000)
+    // DIAGNOSTIC: Print "HI" to confirm we reached high virtual address
+    // At this point, we're executing from TTBR1 space (0xFFFF800040091XXX)
+    // UART must be accessed via HIGH virtual address now!
     // ============================================================
+    
+    // Load HIGH UART virtual address for post-MMU printing
+    movz x19, #0x0900, lsl #16      // x19 = 0x0000000009000000
+    movk x19, #0x8000, lsl #32      // x19 = 0x0000800009000000
+    movk x19, #0xFFFF, lsl #48      // x19 = 0xFFFF800009000000 (HIGH UART)
+    
+    mov w20, #'H'
+    str w20, [x19]
+    mov w20, #'I'
+    str w20, [x19]
+    mov w20, #'\r'
+    str w20, [x19]
+    mov w20, #'\n'
+    str w20, [x19]
     
     // Continue to post-MMU C code (now safe - MMU is enabled, we're in TTBR1)
     bl mmu_trampoline_continuation_point

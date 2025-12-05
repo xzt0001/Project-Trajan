@@ -1,5 +1,11 @@
 Here are the most up to date info about my development progress focusing on low level debugging.
 
+Dec 5th, 2025
+
+TTBR1 high trampoline, TTBR0 vector table, and TTBR1 high UART are no longer issues base on latest diagnostics and the log.
+
+Latest kernel log: https://docs.google.com/document/d/1HaRXGhiROsm8TCCbHDdDEUwUbI15iXqobTkP9iR0vcQ/edit?usp=sharing 
+
 Dec 3rd, 2025
 
 Further diagnostic shows TTBR0 is fine for both UART and the low trampoline mapping. Next step would be verifying TTBR1.

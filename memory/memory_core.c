@@ -1799,27 +1799,37 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
             // Force cache flush for L3 table before reading
             __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(l3_table_addr) : "memory");
             
-            // L3 index for 0x40090000 = (0x40090000 >> 12) & 0x1FF = 0x90 = 144
-            uint64_t l3_entry_144 = l3_table[144];
+            // Calculate L3 index dynamically from actual trampoline address
+            extern void mmu_trampoline_low(void);
+            uint64_t tramp_addr = (uint64_t)&mmu_trampoline_low;
+            uint64_t l3_idx = (tramp_addr >> 12) & 0x1FF;
+            uint64_t l3_entry = l3_table[l3_idx];
             
-            *uart = 'L'; *uart = '3'; *uart = '['; 
-            *uart = '1'; *uart = '4'; *uart = '4';  // Index 144
+            *uart = 'L'; *uart = '3'; *uart = '[';
+            // Print L3 index as 3-digit decimal
+            *uart = '0' + ((l3_idx / 100) % 10);
+            *uart = '0' + ((l3_idx / 10) % 10);
+            *uart = '0' + (l3_idx % 10);
             *uart = ']'; *uart = '=';
-            uart_hex64_early(l3_entry_144);
+            uart_hex64_early(l3_entry);
             *uart = ' '; *uart = 'V'; *uart = ':';
-            *uart = '0' + ((l3_entry_144 & 1) ? 1 : 0);
+            *uart = '0' + ((l3_entry & 1) ? 1 : 0);
             *uart = ' '; *uart = 'P'; *uart = ':';
-            *uart = '0' + ((l3_entry_144 & 2) ? 1 : 0);  // Page bit for L3
+            *uart = '0' + ((l3_entry & 2) ? 1 : 0);  // Page bit for L3
             *uart = '\r'; *uart = '\n';
             
-            // Verify physical address matches trampoline
-            uint64_t l3_pa = l3_entry_144 & 0x0000FFFFFFFFF000UL;
+            // Verify physical address matches trampoline page
+            uint64_t l3_pa = l3_entry & 0x0000FFFFFFFFF000UL;
+            uint64_t expected_tramp_page = tramp_addr & ~0xFFFUL;
             *uart = 'T'; *uart = 'R'; *uart = 'M'; *uart = 'P'; *uart = '_'; *uart = 'P'; *uart = 'A'; *uart = ':';
             uart_hex64_early(l3_pa);
-            if (l3_pa == (tramp_phys & ~0xFFFUL)) {
+            if (l3_pa == expected_tramp_page) {
                 *uart = ' '; *uart = 'O'; *uart = 'K';
             } else {
                 *uart = ' '; *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+                // Show what we expected
+                *uart = ' '; *uart = 'E'; *uart = 'X'; *uart = 'P'; *uart = ':';
+                uart_hex64_early(expected_tramp_page);
             }
             *uart = '\r'; *uart = '\n';
         } else {
@@ -1831,6 +1841,309 @@ void enable_mmu_enhanced(uint64_t* page_table_base) {
         *uart = 'L'; *uart = '1'; *uart = '['; *uart = '1'; *uart = ']'; *uart = ':';
         *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
         *uart = '\r'; *uart = '\n';
+    }
+
+    // ========================================================================
+    // DIAGNOSTIC BLOCK 1: TTBR1 Full Walk for High Trampoline (0xFFFF800040090000)
+    // This verifies the COMPLETE translation path through TTBR1 page tables
+    // for the high virtual address the trampoline will jump to after MMU enable.
+    // ========================================================================
+    {
+        *uart = 'T'; *uart = '1'; *uart = 'W'; *uart = 'A'; *uart = 'L'; *uart = 'K'; *uart = ':';
+        *uart = '\r'; *uart = '\n';
+        
+        // TTBR1 L0 table address (from system register, verified at 0x40001000)
+        uint64_t ttbr1_l0_addr = (uint64_t)l0_table_ttbr1;
+        
+        // Force cache flush for TTBR1 L0 table
+        __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(ttbr1_l0_addr) : "memory");
+        
+        uint64_t* ttbr1_l0 = (uint64_t*)ttbr1_l0_addr;
+        
+        // For VA 0xFFFF800040090000, L0 index = (0x800040090000 >> 39) & 0x1FF = 256
+        uint64_t ttbr1_l0_entry = ttbr1_l0[256];
+        
+        *uart = 'T'; *uart = '1'; *uart = 'L'; *uart = '0'; *uart = '['; 
+        *uart = '2'; *uart = '5'; *uart = '6';
+        *uart = ']'; *uart = '=';
+        uart_hex64_early(ttbr1_l0_entry);
+        *uart = ' '; *uart = 'V'; *uart = ':';
+        *uart = '0' + ((ttbr1_l0_entry & 1) ? 1 : 0);
+        *uart = ' '; *uart = 'T'; *uart = ':';
+        *uart = '0' + ((ttbr1_l0_entry & 2) ? 1 : 0);
+        *uart = '\r'; *uart = '\n';
+        
+        if ((ttbr1_l0_entry & 0x3) == 0x3) {
+            // L0[256] is valid table entry - continue to L1
+            uint64_t ttbr1_l1_addr = ttbr1_l0_entry & 0x0000FFFFFFFFF000UL;
+            __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(ttbr1_l1_addr) : "memory");
+            uint64_t* ttbr1_l1 = (uint64_t*)ttbr1_l1_addr;
+            
+            // L1 index for 0xFFFF800040090000 = (0x800040090000 >> 30) & 0x1FF = 1
+            uint64_t ttbr1_l1_entry = ttbr1_l1[1];
+            
+            *uart = 'T'; *uart = '1'; *uart = 'L'; *uart = '1'; *uart = '['; *uart = '1'; *uart = ']'; *uart = '=';
+            uart_hex64_early(ttbr1_l1_entry);
+            *uart = ' '; *uart = 'V'; *uart = ':';
+            *uart = '0' + ((ttbr1_l1_entry & 1) ? 1 : 0);
+            *uart = ' '; *uart = 'T'; *uart = ':';
+            *uart = '0' + ((ttbr1_l1_entry & 2) ? 1 : 0);
+            *uart = '\r'; *uart = '\n';
+            
+            if ((ttbr1_l1_entry & 0x3) == 0x3) {
+                // L1[1] is valid table entry - continue to L2
+                uint64_t ttbr1_l2_addr = ttbr1_l1_entry & 0x0000FFFFFFFFF000UL;
+                __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(ttbr1_l2_addr) : "memory");
+                uint64_t* ttbr1_l2 = (uint64_t*)ttbr1_l2_addr;
+                
+                // L2 index for 0xFFFF800040090000 = (0x800040090000 >> 21) & 0x1FF = 0
+                uint64_t ttbr1_l2_entry = ttbr1_l2[0];
+                
+                *uart = 'T'; *uart = '1'; *uart = 'L'; *uart = '2'; *uart = '['; *uart = '0'; *uart = ']'; *uart = '=';
+                uart_hex64_early(ttbr1_l2_entry);
+                *uart = ' '; *uart = 'V'; *uart = ':';
+                *uart = '0' + ((ttbr1_l2_entry & 1) ? 1 : 0);
+                *uart = ' '; *uart = 'T'; *uart = ':';
+                *uart = '0' + ((ttbr1_l2_entry & 2) ? 1 : 0);
+                *uart = '\r'; *uart = '\n';
+                
+                if ((ttbr1_l2_entry & 0x3) == 0x3) {
+                    // L2[0] is valid table entry - continue to L3
+                    uint64_t ttbr1_l3_addr = ttbr1_l2_entry & 0x0000FFFFFFFFF000UL;
+                    __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(ttbr1_l3_addr) : "memory");
+                    uint64_t* ttbr1_l3 = (uint64_t*)ttbr1_l3_addr;
+                    
+                    // Calculate L3 index dynamically from actual trampoline address
+                    extern void mmu_trampoline_low(void);
+                    uint64_t t1_tramp_addr = (uint64_t)&mmu_trampoline_low;
+                    uint64_t t1_l3_idx = (t1_tramp_addr >> 12) & 0x1FF;
+                    uint64_t ttbr1_l3_entry = ttbr1_l3[t1_l3_idx];
+                    
+                    *uart = 'T'; *uart = '1'; *uart = 'L'; *uart = '3'; *uart = '[';
+                    // Print L3 index as 3-digit decimal
+                    *uart = '0' + ((t1_l3_idx / 100) % 10);
+                    *uart = '0' + ((t1_l3_idx / 10) % 10);
+                    *uart = '0' + (t1_l3_idx % 10);
+                    *uart = ']'; *uart = '=';
+                    uart_hex64_early(ttbr1_l3_entry);
+                    *uart = ' '; *uart = 'V'; *uart = ':';
+                    *uart = '0' + ((ttbr1_l3_entry & 1) ? 1 : 0);
+                    *uart = ' '; *uart = 'P'; *uart = ':';
+                    *uart = '0' + ((ttbr1_l3_entry & 2) ? 1 : 0);
+                    *uart = '\r'; *uart = '\n';
+                    
+                    // Verify PA matches trampoline physical address
+                    uint64_t ttbr1_pa = ttbr1_l3_entry & 0x0000FFFFFFFFF000UL;
+                    uint64_t expected_t1_tramp_page = t1_tramp_addr & ~0xFFFUL;
+                    *uart = 'T'; *uart = '1'; *uart = '_'; *uart = 'P'; *uart = 'A'; *uart = ':';
+                    uart_hex64_early(ttbr1_pa);
+                    if (ttbr1_pa == expected_t1_tramp_page) {
+                        *uart = ' '; *uart = 'O'; *uart = 'K';
+                    } else {
+                        *uart = ' '; *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+                        // Show what we expected
+                        *uart = ' '; *uart = 'E'; *uart = 'X'; *uart = 'P'; *uart = ':';
+                        uart_hex64_early(expected_t1_tramp_page);
+                    }
+                    *uart = '\r'; *uart = '\n';
+                } else {
+                    *uart = 'T'; *uart = '1'; *uart = 'L'; *uart = '2'; *uart = '['; *uart = '0'; *uart = ']'; *uart = ':';
+                    *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+                    *uart = '\r'; *uart = '\n';
+                }
+            } else {
+                *uart = 'T'; *uart = '1'; *uart = 'L'; *uart = '1'; *uart = '['; *uart = '1'; *uart = ']'; *uart = ':';
+                *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+                *uart = '\r'; *uart = '\n';
+            }
+        } else {
+            *uart = 'T'; *uart = '1'; *uart = 'L'; *uart = '0'; *uart = '['; *uart = '2'; *uart = '5'; *uart = '6'; *uart = ']'; *uart = ':';
+            *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+            *uart = '\r'; *uart = '\n';
+        }
+    }
+
+    // ========================================================================
+    // DIAGNOSTIC BLOCK 2: TTBR0 Vector Table Walk (0x41000000)
+    // This verifies the translation path for the exception vector table.
+    // If this fails, exception handling after MMU enable will crash silently.
+    // Path: L0[0] → L1[1] → L2[8] → L3[0]
+    // ========================================================================
+    {
+        *uart = 'V'; *uart = 'E'; *uart = 'C'; *uart = 'W'; *uart = 'A'; *uart = 'L'; *uart = 'K'; *uart = ':';
+        *uart = '\r'; *uart = '\n';
+        
+        // We already have L0[0] and L1[1] verified - start from L2[8]
+        // L1[1] points to L2 table at 0x40008000 (verified earlier)
+        uint64_t l2_table_addr = l1_entry_1 & 0x0000FFFFFFFFF000UL;
+        
+        // Force cache flush for L2 table region containing index 8
+        __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(l2_table_addr + 8*8) : "memory");
+        
+        uint64_t* l2_table_vec = (uint64_t*)l2_table_addr;
+        
+        // L2 index for 0x41000000 = (0x41000000 >> 21) & 0x1FF = 8
+        uint64_t l2_entry_8 = l2_table_vec[8];
+        
+        *uart = 'V'; *uart = 'L'; *uart = '2'; *uart = '['; *uart = '8'; *uart = ']'; *uart = '=';
+        uart_hex64_early(l2_entry_8);
+        *uart = ' '; *uart = 'V'; *uart = ':';
+        *uart = '0' + ((l2_entry_8 & 1) ? 1 : 0);
+        *uart = ' '; *uart = 'T'; *uart = ':';
+        *uart = '0' + ((l2_entry_8 & 2) ? 1 : 0);
+        *uart = '\r'; *uart = '\n';
+        
+        if ((l2_entry_8 & 0x3) == 0x3) {
+            // L2[8] is valid table entry - continue to L3
+            uint64_t l3_table_vec_addr = l2_entry_8 & 0x0000FFFFFFFFF000UL;
+            __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(l3_table_vec_addr) : "memory");
+            uint64_t* l3_table_vec = (uint64_t*)l3_table_vec_addr;
+            
+            // L3 index for 0x41000000 = (0x41000000 >> 12) & 0x1FF = 0
+            uint64_t l3_entry_0 = l3_table_vec[0];
+            
+            *uart = 'V'; *uart = 'L'; *uart = '3'; *uart = '['; *uart = '0'; *uart = ']'; *uart = '=';
+            uart_hex64_early(l3_entry_0);
+            *uart = ' '; *uart = 'V'; *uart = ':';
+            *uart = '0' + ((l3_entry_0 & 1) ? 1 : 0);
+            *uart = ' '; *uart = 'P'; *uart = ':';
+            *uart = '0' + ((l3_entry_0 & 2) ? 1 : 0);
+            *uart = '\r'; *uart = '\n';
+            
+            // Verify PA matches vector table physical address
+            uint64_t vec_pa = l3_entry_0 & 0x0000FFFFFFFFF000UL;
+            *uart = 'V'; *uart = 'E'; *uart = 'C'; *uart = '_'; *uart = 'P'; *uart = 'A'; *uart = ':';
+            uart_hex64_early(vec_pa);
+            // Vector table should be at 0x41000000
+            if (vec_pa == 0x41000000UL) {
+                *uart = ' '; *uart = 'O'; *uart = 'K';
+            } else {
+                *uart = ' '; *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+            }
+            *uart = '\r'; *uart = '\n';
+            
+            // Check execute permission (PXN bit 53 should be 0 for executable)
+            *uart = 'V'; *uart = 'E'; *uart = 'C'; *uart = '_'; *uart = 'X'; *uart = ':';
+            uint64_t pxn_bit = (l3_entry_0 >> 53) & 1;
+            if (pxn_bit == 0) {
+                *uart = 'E'; *uart = 'X'; *uart = 'E'; *uart = 'C';  // Executable
+            } else {
+                *uart = 'N'; *uart = 'O'; *uart = 'X';  // Not executable - BAD!
+            }
+            *uart = '\r'; *uart = '\n';
+        } else {
+            *uart = 'V'; *uart = 'L'; *uart = '2'; *uart = '['; *uart = '8'; *uart = ']'; *uart = ':';
+            *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+            *uart = '\r'; *uart = '\n';
+        }
+    }
+
+    // ========================================================================
+    // DIAGNOSTIC BLOCK 3: TTBR1 UART Mapping (0xFFFF800009000000)
+    // This verifies the translation path for HIGH virtual UART address.
+    // The continuation point uses UART_VIRT (0xFFFF800009000000) which goes
+    // through TTBR1. If this fails, continuation point can't print anything.
+    // Path: T1L0[256] → T1L1[0] → T1L2[72] → T1L3[0]
+    // ========================================================================
+    {
+        *uart = 'T'; *uart = '1'; *uart = 'U'; *uart = 'A'; *uart = 'R'; *uart = 'T'; *uart = ':';
+        *uart = '\r'; *uart = '\n';
+        
+        // TTBR1 L0 table address
+        uint64_t ttbr1_l0_addr_uart = (uint64_t)l0_table_ttbr1;
+        
+        // Force cache flush for TTBR1 L0 table
+        __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(ttbr1_l0_addr_uart) : "memory");
+        
+        uint64_t* ttbr1_l0_uart = (uint64_t*)ttbr1_l0_addr_uart;
+        
+        // For VA 0xFFFF800009000000, L0 index = (0x800009000000 >> 39) & 0x1FF = 256
+        // (Same L0 entry as trampoline - should already be valid)
+        uint64_t t1_l0_entry_uart = ttbr1_l0_uart[256];
+        
+        *uart = 'U'; *uart = 'L'; *uart = '0'; *uart = '['; *uart = '2'; *uart = '5'; *uart = '6'; *uart = ']'; *uart = '=';
+        uart_hex64_early(t1_l0_entry_uart);
+        *uart = ' '; *uart = 'V'; *uart = ':';
+        *uart = '0' + ((t1_l0_entry_uart & 1) ? 1 : 0);
+        *uart = '\r'; *uart = '\n';
+        
+        if ((t1_l0_entry_uart & 0x3) == 0x3) {
+            // L0[256] valid - continue to L1
+            uint64_t t1_l1_addr_uart = t1_l0_entry_uart & 0x0000FFFFFFFFF000UL;
+            __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(t1_l1_addr_uart) : "memory");
+            uint64_t* t1_l1_uart = (uint64_t*)t1_l1_addr_uart;
+            
+            // L1 index for 0xFFFF800009000000 = (0x800009000000 >> 30) & 0x1FF = 0
+            // NOTE: This is DIFFERENT from trampoline which uses L1[1]!
+            uint64_t t1_l1_entry_uart = t1_l1_uart[0];
+            
+            *uart = 'U'; *uart = 'L'; *uart = '1'; *uart = '['; *uart = '0'; *uart = ']'; *uart = '=';
+            uart_hex64_early(t1_l1_entry_uart);
+            *uart = ' '; *uart = 'V'; *uart = ':';
+            *uart = '0' + ((t1_l1_entry_uart & 1) ? 1 : 0);
+            *uart = ' '; *uart = 'T'; *uart = ':';
+            *uart = '0' + ((t1_l1_entry_uart & 2) ? 1 : 0);
+            *uart = '\r'; *uart = '\n';
+            
+            if ((t1_l1_entry_uart & 0x3) == 0x3) {
+                // L1[0] valid - continue to L2
+                uint64_t t1_l2_addr_uart = t1_l1_entry_uart & 0x0000FFFFFFFFF000UL;
+                __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(t1_l2_addr_uart) : "memory");
+                uint64_t* t1_l2_uart = (uint64_t*)t1_l2_addr_uart;
+                
+                // L2 index for 0xFFFF800009000000 = (0x800009000000 >> 21) & 0x1FF = 72
+                uint64_t t1_l2_entry_uart = t1_l2_uart[72];
+                
+                *uart = 'U'; *uart = 'L'; *uart = '2'; *uart = '['; *uart = '7'; *uart = '2'; *uart = ']'; *uart = '=';
+                uart_hex64_early(t1_l2_entry_uart);
+                *uart = ' '; *uart = 'V'; *uart = ':';
+                *uart = '0' + ((t1_l2_entry_uart & 1) ? 1 : 0);
+                *uart = ' '; *uart = 'T'; *uart = ':';
+                *uart = '0' + ((t1_l2_entry_uart & 2) ? 1 : 0);
+                *uart = '\r'; *uart = '\n';
+                
+                if ((t1_l2_entry_uart & 0x3) == 0x3) {
+                    // L2[72] valid - continue to L3
+                    uint64_t t1_l3_addr_uart = t1_l2_entry_uart & 0x0000FFFFFFFFF000UL;
+                    __asm__ volatile("dc civac, %0\n\tdsb sy\n\tisb" :: "r"(t1_l3_addr_uart) : "memory");
+                    uint64_t* t1_l3_uart = (uint64_t*)t1_l3_addr_uart;
+                    
+                    // L3 index for 0xFFFF800009000000 = (0x800009000000 >> 12) & 0x1FF = 0
+                    uint64_t t1_l3_entry_uart = t1_l3_uart[0];
+                    
+                    *uart = 'U'; *uart = 'L'; *uart = '3'; *uart = '['; *uart = '0'; *uart = ']'; *uart = '=';
+                    uart_hex64_early(t1_l3_entry_uart);
+                    *uart = ' '; *uart = 'V'; *uart = ':';
+                    *uart = '0' + ((t1_l3_entry_uart & 1) ? 1 : 0);
+                    *uart = ' '; *uart = 'P'; *uart = ':';
+                    *uart = '0' + ((t1_l3_entry_uart & 2) ? 1 : 0);
+                    *uart = '\r'; *uart = '\n';
+                    
+                    // Verify PA matches UART physical address (0x09000000)
+                    uint64_t uart_pa = t1_l3_entry_uart & 0x0000FFFFFFFFF000UL;
+                    *uart = 'U'; *uart = 'A'; *uart = 'R'; *uart = 'T'; *uart = '_'; *uart = 'P'; *uart = 'A'; *uart = ':';
+                    uart_hex64_early(uart_pa);
+                    if (uart_pa == 0x09000000UL) {
+                        *uart = ' '; *uart = 'O'; *uart = 'K';
+                    } else {
+                        *uart = ' '; *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+                    }
+                    *uart = '\r'; *uart = '\n';
+                } else {
+                    *uart = 'U'; *uart = 'L'; *uart = '2'; *uart = '['; *uart = '7'; *uart = '2'; *uart = ']'; *uart = ':';
+                    *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+                    *uart = '\r'; *uart = '\n';
+                }
+            } else {
+                *uart = 'U'; *uart = 'L'; *uart = '1'; *uart = '['; *uart = '0'; *uart = ']'; *uart = ':';
+                *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+                *uart = '\r'; *uart = '\n';
+            }
+        } else {
+            *uart = 'U'; *uart = 'L'; *uart = '0'; *uart = '['; *uart = '2'; *uart = '5'; *uart = '6'; *uart = ']'; *uart = ':';
+            *uart = 'B'; *uart = 'A'; *uart = 'D'; *uart = '!';
+            *uart = '\r'; *uart = '\n';
+        }
     }
         
     // Jump to trampoline for atomic PC transition TTBR0→TTBR1
