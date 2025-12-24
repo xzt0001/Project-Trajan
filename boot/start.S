@@ -42,11 +42,18 @@ _start:
     mov w2, #0
     str w2, [x1, #0x30]         // UARTCR offset = 0x30
     
-    // Set baud rate divisor (simple setup for debug)
-    mov w2, #26                  // IBRD for 115200 baud @ 4MHz (rough)
-    str w2, [x1, #0x24]         // UARTIBRD offset = 0x24
-    mov w2, #3                   // FBRD 
-    str w2, [x1, #0x28]         // UARTFBRD offset = 0x28
+    // Set baud rate divisor (old)
+    //mov w2, #26                  // IBRD for 115200 baud @ 4MHz (rough)
+    //str w2, [x1, #0x24]         // UARTIBRD offset = 0x24
+    //mov w2, #3                   // FBRD 
+    //str w2, [x1, #0x28]         // UARTFBRD offset = 0x28
+
+    // PL011 UART init (QEMU virt)
+    mov x1, x20                  // UART base
+    mov w2, #0x70                // 8N1, FIFO enable
+    str w2, [x1, #0x2C]          // UARTLCR_H
+    mov w2, #0x301               // Enable UART + TX + RX
+    str w2, [x1, #0x30]          // UARTCR
     
     // Set line control: 8N1 (8 bits, no parity, 1 stop bit)
     mov w2, #0x70               // WLEN=11 (8 bits), FEN=1 (FIFO enable)

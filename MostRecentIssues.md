@@ -1,5 +1,21 @@
 Here are the most up to date info about my development progress focusing on low level debugging.
 
+Dec 23rd, 2025
+
+**Next update would be in 2026
+
+TCR_EL1 Misconfiguration Discovery and Systematic Fix Plan
+
+Conducted a detailed audit of TCR_EL1 configuration in mmu_policy.c by cross-referencing with the ARM Architecture Reference Manual and Linux kernel source. Discovered a critical encoding error: TG1 (TTBR1 granule size) was set to 0, which is a Reserved value. Unlike TG0 where 0b00 = 4KB, the TG1 field uses asymmetric encoding where 0b10 = 4KB and 0b00 is undefined behavior.
+
+This was confirmed by examining Linux kernel which defines TCR_TG0_4K = (0 << 14) but TCR_TG1_4K = (2 << 30) — explicitly different values for the same granule size. Also identified that IPS=1 means 36-bit PA (not 40-bit as commented).
+
+Upcoming Solution: Implementing a 4-layer defense strategy following Linux kernel practice:
+1. Authoritative header arm64_sysreg.h with ARM spec references
+2. Named constants instead of magic numbers
+3. Cross-reference audit script against Linux kernel
+4. Runtime verification before MMU enable
+
 Dec 5th, 2025
 
 TTBR1 high trampoline, TTBR0 vector table, and TTBR1 high UART are no longer issues base on latest diagnostics and the log.
